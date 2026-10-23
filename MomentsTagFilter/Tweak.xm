@@ -80,8 +80,10 @@ static NSString *const kMTFIncludeUntagged= @"MTFIncludeUntagged";
 static NSString *const kMTFNoTagKey       = @"__MTF_NOTAG__";
 
 static const NSUInteger kMTFTargetMatch   = 10;   // 目标：补拉到至少这么多条匹配项
-static const NSUInteger kMTFMaxAutoPages   = 10;  // 单次筛选最多自动补拉的页数（防封）
-static const NSTimeInterval kMTFPageDelay  = 1.5; // 每次补拉间隔（防封）
+static const NSUInteger kMTFMaxAutoPages   = 40;  // 单次筛选最多「成功落地」的补拉页数（进度驱动计数）
+static const NSUInteger kMTFMaxStallTicks  = 3;   // 一页发出后连续无增长的等待次数（约 4.5 秒），超了视为请求被吞
+static const NSUInteger kMTFMaxRetries     = 3;   // 请求被吞后最多重发次数
+static const NSTimeInterval kMTFPageDelay  = 1.5; // 每次补拉检查间隔（防封）
 static const NSTimeInterval kMTFFillCooldown = 3.0;
 
 static NSString *MTFAuthorOfItem(id item) {
@@ -110,10 +112,16 @@ static NSUInteger gMapCount(void);
 @property (nonatomic, strong) UIView *hud;                          // 加载转圈
 @property (nonatomic, weak)   WCTimeLineViewController *activeMomentsVC;
 @property (nonatomic, weak)   WCFacade *facade;
-// 补拉状态
+// 补拉状态（进度驱动：以底层条数是否真增长判断一页是否落地）
 @property (nonatomic, assign) BOOL filling;
 @property (nonatomic, assign) BOOL noMore;
-@property (nonatomic, assign) NSUInteger autoPages;
+@property (nonatomic, assign) NSUInteger fillPages;              // 已成功落地的页数
+@property (nonatomic, assign) BOOL tailInFlight;                 // 已发出一页、等它落地
+@property (nonatomic, assign) NSUInteger stallTicks;             // 在途页连续无增长的检查次数
+@property (nonatomic, assign) NSUInteger retryCount;             // 请求被吞后的重发次数
+@property (nonatomic, assign) unsigned long long rawCount;       // facade 底层总条数（hook 每次回填）
+@property (nonatomic, assign) unsigned long long lastRawCount;   // 发页时的底层条数快照
+@property (nonatomic, weak)   UILabel *hudLabel;                 // HUD 进度文字
 @property (nonatomic, assign) NSTimeInterval lastFillAt;
 + (instancetype)shared;
 @end
@@ -293,21 +301,30 @@ static BOOL MTFIsFriend(id c){
     dispatch_async(dispatch_get_main_queue(),^{
         UIView *host=self.activeMomentsVC.view; if(!host) return;
         if(self.hud && self.hud.superview) return;
-        UIView *box=[[UIView alloc] initWithFrame:CGRectMake(0,0,120,120)];
+        UIView *box=[[UIView alloc] initWithFrame:CGRectMake(0,0,210,120)];
         box.center=CGPointMake(host.bounds.size.width/2, host.bounds.size.height/2);
         box.autoresizingMask=UIViewAutoresizingFlexibleTopMargin|UIViewAutoresizingFlexibleBottomMargin|UIViewAutoresizingFlexibleLeftMargin|UIViewAutoresizingFlexibleRightMargin;
         box.backgroundColor=[[UIColor blackColor] colorWithAlphaComponent:0.72];
         box.layer.cornerRadius=14;
         UIActivityIndicatorView *ind=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhiteLarge];
-        ind.center=CGPointMake(60,46); [ind startAnimating]; [box addSubview:ind];
-        UILabel *lb=[[UILabel alloc] initWithFrame:CGRectMake(0,78,120,22)];
-        lb.text=@"正在加载…"; lb.textColor=[UIColor whiteColor]; lb.font=[UIFont systemFontOfSize:14]; lb.textAlignment=NSTextAlignmentCenter;
+        ind.center=CGPointMake(105,42); [ind startAnimating]; [box addSubview:ind];
+        UILabel *lb=[[UILabel alloc] initWithFrame:CGRectMake(10,72,190,40)];
+        lb.text=@"正在加载…"; lb.textColor=[UIColor whiteColor]; lb.font=[UIFont systemFontOfSize:13]; lb.textAlignment=NSTextAlignmentCenter;
+        lb.numberOfLines=2;
         [box addSubview:lb];
-        [host addSubview:box]; self.hud=box;
+        [host addSubview:box]; self.hud=box; self.hudLabel=lb;
     });
 }
 - (void)hideHUD {
-    dispatch_async(dispatch_get_main_queue(),^{ [self.hud removeFromSuperview]; self.hud=nil; });
+    dispatch_async(dispatch_get_main_queue(),^{ [self.hud removeFromSuperview]; self.hud=nil; self.hudLabel=nil; });
+}
+
+// HUD 进度：让用户能区分「还在拉」与「确实没有」
+- (void)updateHUD {
+    UILabel *lb=self.hudLabel; if(!lb) return;
+    NSString *txt=[NSString stringWithFormat:@"正在加载… 已扫描 %llu 条 · 匹配 %lu 条",
+        (unsigned long long)self.rawCount,(unsigned long)gMapCount()];
+    dispatch_async(dispatch_get_main_queue(),^{ lb.text=txt; });
 }
 
 - (void)applyFilterChanged {
@@ -322,7 +339,9 @@ static BOOL MTFIsFriend(id c){
     NSTimeInterval now=[NSDate date].timeIntervalSince1970;
     if(self.filling) return;
     if(now-self.lastFillAt < kMTFFillCooldown) return;
-    self.lastFillAt=now; self.filling=YES; self.noMore=NO; self.autoPages=0;
+    self.lastFillAt=now; self.filling=YES; self.noMore=NO;
+    self.fillPages=0; self.tailInFlight=NO; self.stallTicks=0; self.retryCount=0;
+    self.lastRawCount=self.rawCount;
     [self showHUD];
     dispatch_async(dispatch_get_main_queue(),^{
         @try{ [f updateTimelineHead]; }@catch(__unused id e){}   // 刷新一次最新
@@ -339,13 +358,33 @@ static BOOL MTFIsFriend(id c){
 - (void)fillStep {
     if(![self isActive]){ self.filling=NO; [self hideHUD]; return; }
     WCFacade *f=self.facade; if(!f){ self.filling=NO; [self hideHUD]; return; }
+    // 进度驱动：在途页让底层条数发生变化 = 真的落地了，按「成功页」计数
+    if(self.tailInFlight && self.rawCount!=self.lastRawCount){
+        self.tailInFlight=NO;
+        self.fillPages++;
+        self.stallTicks=0;
+        self.lastRawCount=self.rawCount;
+    }
+    [self updateHUD];
     NSUInteger matched = gMapCount();         // 当前匹配条数
-    if(matched>=kMTFTargetMatch || self.autoPages>=kMTFMaxAutoPages || self.noMore){
+    if(matched>=kMTFTargetMatch || self.noMore || self.fillPages>=kMTFMaxAutoPages){
         self.filling=NO; [self hideHUD]; return;
     }
-    self.autoPages++;
-    @try{ [f updateTimelineTail]; }@catch(__unused id e){}  // 加载更旧一页
-    [self reloadMoments];
+    if(self.tailInFlight){
+        // 上一页还没落地：先等；等太久视为请求被宿主合并/吞掉，有限次重发
+        self.stallTicks++;
+        if(self.stallTicks<kMTFMaxStallTicks){ [self scheduleFillStep]; return; }
+        if(self.retryCount>=kMTFMaxRetries){ self.filling=NO; [self hideHUD]; return; }
+        self.retryCount++;
+        self.stallTicks=0;
+        self.tailInFlight=NO;   // 落到下面统一重发
+    }
+    if(!self.tailInFlight){
+        self.tailInFlight=YES;
+        self.lastRawCount=self.rawCount;
+        @try{ [f updateTimelineTail]; }@catch(__unused id e){}  // 加载更旧一页
+        [self reloadMoments];
+    }
     [self scheduleFillStep];
 }
 
@@ -510,6 +549,7 @@ static void MTFRebuildMapIfNeeded(WCFacade *self, unsigned long long origCount){
     unsigned long long orig=%orig;
     MTFManager *m=[MTFManager shared];
     m.facade=self;
+    m.rawCount=orig;   // 回填底层总条数，供补拉的进度判定使用
     if(![m isActive]) return orig;
     MTFRebuildMapIfNeeded(self,orig);
     return (unsigned long long)gMap.count;
@@ -600,7 +640,7 @@ static void MTFRegisterIntoPluginsMgr(void){
     @try {
         WCPluginsMgr *mgr=[cls sharedInstance]; BOOL exists=NO;
         @try { for(id p in [mgr plugins]){ NSString *tt=nil; @try{ tt=[p valueForKey:@"title"]; }@catch(__unused id e){} if([tt isEqualToString:@"朋友圈标签筛选"]){ exists=YES; break; } } } @catch(__unused id e){}
-        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.3.1" controller:@"MTFSettingsViewController"];
+        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.3.2" controller:@"MTFSettingsViewController"];
     } @catch(__unused id e){}
 }
 
