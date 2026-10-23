@@ -97,6 +97,8 @@ static NSString *MTFAuthorOfItem(id item) {
 
 // 当前匹配到的条数（实现见下方 hook 区）
 static NSUInteger gMapCount(void);
+// 诊断报告（实现见下方 hook 区，需要直接读 facade 原始条目）
+static NSString *MTFBuildDiagnostics(void);
 
 #pragma mark - 筛选引擎
 
@@ -224,17 +226,28 @@ static BOOL MTFIsFriend(id c){
     return NO;
 }
 
+// 不走缓存地现算一遍「选中标签成员并集」。标签服务未就绪（取不到数组）时返回 nil，
+// 调用方不要把这种结果钉进缓存——那正是冷启动时把空集缓存死、筛选全空的竞态。
+- (NSSet *)freshAllowedSet {
+    ContactTagMgr *mgr=[self tagMgr];
+    if(!mgr) return nil;
+    NSMutableSet *allowed=[NSMutableSet set];
+    BOOL ok=YES;
+    for(NSString *name in [self selectedNames]){
+        NSArray *cs=nil;
+        @try{ cs=[mgr getContactsForTagName:name]; }@catch(__unused id e){ cs=nil; }
+        if(![cs isKindOfClass:[NSArray class]]){ ok=NO; continue; }
+        for(id c in cs){ NSString *u=MTFUsernameOfMember(c); if(u.length) [allowed addObject:u]; }
+    }
+    return ok ? allowed : nil;
+}
+
 // 惰性计算：选中标签成员并集 + 全部已打标签用户名。按代际缓存，修复冷启动空白。
 - (void)ensureSets {
     if(self.dataGen==self.generation && self.allowedUsernames) return;
+    NSSet *allowed=[self freshAllowedSet];
+    if(!allowed) return;   // 服务未就绪：不写缓存，下次判定再算
     ContactTagMgr *mgr=[self tagMgr];
-    NSMutableSet *allowed=[NSMutableSet set];
-    @try {
-        for(NSString *name in [self selectedNames]){
-            NSArray *cs=nil; @try{ cs=[mgr getContactsForTagName:name]; }@catch(__unused id e){}
-            for(id c in cs){ NSString *u=MTFUsernameOfMember(c); if(u.length) [allowed addObject:u]; }
-        }
-    } @catch(__unused id e){}
     NSMutableSet *tagged=[NSMutableSet set];
     @try { NSDictionary *d=[mgr getDicWithUserNameForAllTag];
         if([d isKindOfClass:[NSDictionary class]]) for(id k in d) if([k isKindOfClass:[NSString class]]) [tagged addObject:k];
@@ -390,6 +403,32 @@ static BOOL MTFIsFriend(id c){
 
 @end
 
+#pragma mark - 诊断页
+
+@interface MTFDiagnosticsViewController : UIViewController
+@property (nonatomic, copy) NSString *text;
+@end
+
+@implementation MTFDiagnosticsViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title=@"诊断信息";
+    self.view.backgroundColor=[UIColor whiteColor];
+    UITextView *tv=[[UITextView alloc] initWithFrame:self.view.bounds];
+    tv.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
+    tv.editable=NO;
+    tv.font=[UIFont systemFontOfSize:12];
+    tv.text=self.text;
+    [self.view addSubview:tv];
+    self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"复制" style:UIBarButtonItemStyleDone target:self action:@selector(copyAll)];
+    self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(closeDiag)];
+}
+- (void)copyAll { [UIPasteboard generalPasteboard].string=self.text; }
+- (void)closeDiag { [self dismissViewControllerAnimated:YES completion:nil]; }
+
+@end
+
 #pragma mark - 设置 / 标签选择页
 
 // 「名字 (人数)」——人数紧贴名字、灰色括号，与系统通讯录标签页一致
@@ -447,16 +486,18 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
 
 - (void)done { [self dismissViewControllerAnimated:YES completion:nil]; }
 
-// section: 0 开关, 1 批量操作, 2 列表
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 3; }
+// section: 0 开关, 1 批量操作, 2 列表, 3 排查
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 4; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s {
     if(s==0) return 1;
     if(s==1) return 2;
+    if(s==3) return 1;
     return 1 + (NSInteger)self.tags.count; // 首行=未设置标签
 }
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s {
     if(s==0) return @"总开关";
     if(s==1) return @"批量操作";
+    if(s==3) return @"排查";
     return @"按好友标签筛选（可多选）";
 }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
@@ -482,6 +523,13 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
         c.textLabel.text = ip.row==0 ? @"全选" : @"取消全选";
         return c;
     }
+    if(ip.section==3){
+        UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+        c.textLabel.font=[UIFont systemFontOfSize:17];
+        c.textLabel.textColor=self.view.tintColor?:[UIColor systemBlueColor];
+        c.textLabel.text=@"生成诊断信息";
+        return c;
+    }
     // 每次新建，避免复用导致的文字错位；人数紧贴名字后、灰色括号，如「摄影师 (71)」
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
     if(ip.row==0){ // 未设置标签的朋友
@@ -497,6 +545,13 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
     return c;
 }
 
+- (void)showDiagnostics {
+    MTFDiagnosticsViewController *vc=[MTFDiagnosticsViewController new];
+    vc.text=MTFBuildDiagnostics();
+    UINavigationController *nav=[[UINavigationController alloc] initWithRootViewController:vc];
+    [self presentViewController:nav animated:YES completion:nil];
+}
+
 - (void)toggleEnabled:(UISwitch *)sw {
     [[MTFManager shared] setEnabled:sw.on];
     self.changed=YES;
@@ -507,6 +562,7 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [t deselectRowAtIndexPath:ip animated:YES];
     MTFManager *m=[MTFManager shared];
+    if(ip.section==3){ [self showDiagnostics]; return; }
     if(ip.section==0) return;
     if(ip.section==1){
         if(ip.row==0) [m selectAll]; else [m clearAll];
@@ -541,6 +597,79 @@ static void MTFRebuildMapIfNeeded(WCFacade *self, unsigned long long origCount){
     }
     gBuilding=NO;
     gMap=map; gMapGen=m.generation; gMapOrigCount=origCount;
+}
+
+// 诊断报告：对比「缓存的成员集合 vs 现算的成员集合」、统计已扫描条目的作者与
+// 时间跨度、算成员与作者的交集——一次分清是集合被毒化、作者格式对不上、
+// 还是这些人的帖子根本不在主页时间线流里。
+static NSString *MTFBuildDiagnostics(void){
+    MTFManager *m=[MTFManager shared];
+    NSMutableString *r=[NSMutableString string];
+    [r appendString:@"MomentsTagFilter 诊断 (v1.3.3)\n"];
+    [r appendFormat:@"开关: %@  已选标签: %@  含未标签: %@\n",
+        [m enabled]?@"开":@"关",
+        [m selectedNames].count?[[m selectedNames] componentsJoinedByString:@", "]:@"(无)",
+        [m includeUntagged]?@"是":@"否"];
+    [m ensureSets];
+    NSSet *fresh=[m freshAllowedSet];
+    [r appendFormat:@"成员集合: 缓存 %lu 人 / 现算 %@ 人  已打标签总集 %lu 人\n",
+        (unsigned long)(m.allowedUsernames?m.allowedUsernames.count:0),
+        fresh?[NSString stringWithFormat:@"%lu",(unsigned long)fresh.count]:@"取不到(服务未就绪)",
+        (unsigned long)(m.taggedUnion?m.taggedUnion.count:0)];
+    if(fresh && m.allowedUsernames && fresh.count!=m.allowedUsernames.count)
+        [r appendString:@"⚠️ 缓存与现算不一致: 缓存是旧的或被冷启动毒化\n"];
+    ContactTagMgr *tm=[m tagMgr];
+    for(NSString *name in [m selectedNames]){
+        NSMutableArray *sample=[NSMutableArray array]; NSInteger cnt=-1;
+        @try{ NSArray *cs=[tm getContactsForTagName:name];
+            if([cs isKindOfClass:[NSArray class]]){ cnt=(NSInteger)cs.count;
+                for(id c in cs){ NSString *u=MTFUsernameOfMember(c); if(u.length){ [sample addObject:u]; if(sample.count>=3) break; } } }
+        }@catch(__unused id e){}
+        [r appendFormat:@"标签[%@]: 成员 %ld 人, 样本: %@\n", name,(long)cnt,
+            sample.count?[sample componentsJoinedByString:@", "]:@"(无)"];
+    }
+    WCFacade *f=m.facade;
+    unsigned long long raw=m.rawCount;
+    [r appendFormat:@"时间线原始条数: %llu  当前投影匹配: %lu 条\n",
+        (unsigned long long)raw,(unsigned long)gMapCount()];
+    if(f && raw){
+        NSMutableSet *authors=[NSMutableSet set];
+        unsigned int tMin=UINT_MAX, tMax=0;
+        unsigned long long n=MIN(raw,4000ULL);
+        gBuilding=YES;
+        for(unsigned long long i=0;i<n;i++){
+            id item=nil; @try{ item=[f getTimelineDataItemOfIndex:i]; }@catch(__unused id e){}
+            if(!item) continue;
+            NSString *u=MTFAuthorOfItem(item); if(u.length) [authors addObject:u];
+            @try{ id tv=[item valueForKey:@"createtime"];
+                if([tv isKindOfClass:[NSNumber class]]){ unsigned int t=[tv unsignedIntValue];
+                    if(t){ if(t<tMin)tMin=t; if(t>tMax)tMax=t; } }
+            }@catch(__unused id e){}
+        }
+        gBuilding=NO;
+        NSDateFormatter *fmt=[[NSDateFormatter alloc] init]; fmt.dateFormat=@"MM-dd HH:mm";
+        [r appendFormat:@"已扫描 %llu 条: 不同作者 %lu 人, 时间 %@ ~ %@\n", n,(unsigned long)authors.count,
+            tMax?[fmt stringFromDate:[NSDate dateWithTimeIntervalSince1970:tMax]]:@"?",
+            (tMin!=UINT_MAX)?[fmt stringFromDate:[NSDate dateWithTimeIntervalSince1970:tMin]]:@"?"];
+        if(authors.count){
+            NSArray *all=[authors allObjects];
+            [r appendFormat:@"作者样本: %@\n",
+                [[all subarrayWithRange:NSMakeRange(0,MIN(all.count,15))] componentsJoinedByString:@", "]];
+        }
+        if(fresh){
+            NSMutableSet *inter=[fresh mutableCopy]; [inter intersectSet:authors];
+            [r appendFormat:@"已选标签成员 ∩ 已扫描作者: %lu 人\n",(unsigned long)inter.count];
+            if(inter.count){
+                NSArray *ia=[inter allObjects];
+                [r appendFormat:@"交集样本: %@\n",
+                    [[ia subarrayWithRange:NSMakeRange(0,MIN(ia.count,5))] componentsJoinedByString:@", "]];
+            }
+        }
+    } else {
+        [r appendString:@"时间线: 还没进朋友圈页或暂无数据\n"];
+    }
+    [r appendFormat:@"补拉: 成功页 %lu  noMore %@\n",(unsigned long)m.fillPages, m.noMore?@"是":@"否"];
+    return r;
 }
 
 %hook WCFacade
@@ -640,7 +769,7 @@ static void MTFRegisterIntoPluginsMgr(void){
     @try {
         WCPluginsMgr *mgr=[cls sharedInstance]; BOOL exists=NO;
         @try { for(id p in [mgr plugins]){ NSString *tt=nil; @try{ tt=[p valueForKey:@"title"]; }@catch(__unused id e){} if([tt isEqualToString:@"朋友圈标签筛选"]){ exists=YES; break; } } } @catch(__unused id e){}
-        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.3.2" controller:@"MTFSettingsViewController"];
+        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.3.3" controller:@"MTFSettingsViewController"];
     } @catch(__unused id e){}
 }
 
