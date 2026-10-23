@@ -158,16 +158,17 @@ static NSUInteger gMapCount(void);
 }
 
 - (NSInteger)memberCountForTag:(NSDictionary *)tag {
-    id tid=tag[@"id"]; NSString *name=tag[@"name"];
-    if(tid){ NSNumber *c=self.countCache[tid]; if(c) return c.integerValue; }
+    NSString *name=tag[@"name"];
+    if(![name isKindOfClass:[NSString class]] || !name.length) return -1;
+    NSNumber *cached=self.countCache[name]; if(cached) return cached.integerValue;
     ContactTagMgr *mgr=[self tagMgr]; NSInteger cnt=-1;
+    // 注意：getContactsForLabel: 需要「标签对象」(会对入参调 m_uiID)，传标签ID(NSNumber)会崩溃，
+    // 这里一律用按名字查询，安全可靠。
     @try {
-        NSArray *cs=nil;
-        if(tid) @try{ cs=[mgr getContactsForLabel:tid]; }@catch(__unused id e){}
-        if(![cs isKindOfClass:[NSArray class]] && name) @try{ cs=[mgr getContactsForTagName:name]; }@catch(__unused id e){}
+        NSArray *cs=[mgr getContactsForTagName:name];
         if([cs isKindOfClass:[NSArray class]]) cnt=(NSInteger)cs.count;
     } @catch(__unused id e){}
-    if(cnt>=0 && tid) self.countCache[tid]=@(cnt);
+    if(cnt>=0) self.countCache[name]=@(cnt);
     return cnt;
 }
 
@@ -540,7 +541,7 @@ static void MTFRegisterIntoPluginsMgr(void){
     @try {
         WCPluginsMgr *mgr=[cls sharedInstance]; BOOL exists=NO;
         @try { for(id p in [mgr plugins]){ NSString *tt=nil; @try{ tt=[p valueForKey:@"title"]; }@catch(__unused id e){} if([tt isEqualToString:@"朋友圈标签筛选"]){ exists=YES; break; } } } @catch(__unused id e){}
-        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.2.0" controller:@"MTFSettingsViewController"];
+        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.2.1" controller:@"MTFSettingsViewController"];
     } @catch(__unused id e){}
 }
 
