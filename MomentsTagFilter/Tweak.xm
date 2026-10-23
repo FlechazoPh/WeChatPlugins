@@ -294,11 +294,30 @@ static BOOL MTFIsFriend(id c){
 
 - (NSInteger)untaggedCount { return self.untaggedFriends? (NSInteger)self.untaggedFriends.count : -1; }
 
+// 把标签成员元素解析成完整 CContact。真机实测（v1.4.0）：getContactsForTagName: 返回的
+// 元素拿不到显示名、直接传给个人页路由还会闪退——元素多半只是用户名或轻量对象。
+// 统一像通讯录标签页那样经 CContactMgr 按用户名取完整好友对象，名字与跳转才都正常。
+- (id)resolveContact:(id)el {
+    if(!el) return nil;
+    Class cc=objc_getClass("CContact");
+    if(cc && [el isKindOfClass:cc]) return el;
+    NSString *u=MTFUsernameOfMember(el);
+    if(!u.length) return nil;
+    id c=nil;
+    @try { c=[[self contactMgr] getContactByName:u]; } @catch(__unused id e){}
+    if(cc && [c isKindOfClass:cc]) return c;
+    return nil;
+}
+
 // 标签成员的联系人对象（成员列表展示/跳转用，顺序同系统返回）
 - (NSArray *)contactsForTagName:(NSString *)name {
     ContactTagMgr *mgr=[self tagMgr]; if(!mgr||!name.length) return @[];
-    @try { NSArray *cs=[mgr getContactsForTagName:name]; if([cs isKindOfClass:[NSArray class]]) return cs; } @catch(__unused id e){}
-    return @[];
+    NSArray *raw=nil;
+    @try { raw=[mgr getContactsForTagName:name]; } @catch(__unused id e){}
+    if(![raw isKindOfClass:[NSArray class]]) return @[];
+    NSMutableArray *out=[NSMutableArray array];
+    for(id el in raw){ id c=[self resolveContact:el]; [out addObject:c?:el]; }
+    return out;
 }
 
 // 未标签好友的联系人对象：用户名集优先用异步已算好的 untaggedFriends，没有则同步现算
@@ -474,8 +493,13 @@ static BOOL MTFIsFriend(id c){
 #pragma mark - 成员名单（B1：点成员跳原生个人朋友圈页）
 
 static NSString *MTFDisplayNameOfContact(id c){
+    if(!c || [c isKindOfClass:[NSString class]]) return @"";
     @try { if([c respondsToSelector:@selector(getContactDisplayName)]){
         id n=[c getContactDisplayName];
+        if([n isKindOfClass:[NSString class]] && [(NSString*)n length]) return n;
+    } } @catch(__unused id e){}
+    @try { if([c respondsToSelector:@selector(m_nsNickName)]){
+        id n=[c m_nsNickName];
         if([n isKindOfClass:[NSString class]] && [(NSString*)n length]) return n;
     } } @catch(__unused id e){}
     @try { id n=[c valueForKey:@"m_nsNickName"];
@@ -519,8 +543,14 @@ static NSString *MTFDisplayNameOfContact(id c){
 
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [t deselectRowAtIndexPath:ip animated:YES];
-    id contact=self.contacts[ip.row];
-    if(!contact) return;
+    // 跳转前务必拿到完整 CContact：轻量对象/用户名直接传给路由会闪退（v1.4.0 实测）
+    id contact=[[MTFManager shared] resolveContact:self.contacts[ip.row]];
+    if(!contact){
+        UIAlertController *ac=[UIAlertController alertControllerWithTitle:@"无法打开" message:@"没能读取到这位好友的完整资料。" preferredStyle:UIAlertControllerStyleAlert];
+        [ac addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:ac animated:YES completion:nil];
+        return;
+    }
     // 走宿主自己的路由打开个人朋友圈页；类/方法缺失时静默降级（不崩）
     Class router=objc_getClass("WCTimelineRouterHelper");
     SEL sel=@selector(navigateToUserPageViewController:contact:scene:thumbnailCnt:source:);
@@ -750,7 +780,7 @@ static void MTFRebuildMapIfNeeded(WCFacade *self, unsigned long long origCount){
 static NSString *MTFBuildDiagnostics(void){
     MTFManager *m=[MTFManager shared];
     NSMutableString *r=[NSMutableString string];
-    [r appendString:@"MomentsTagFilter 诊断 (v1.4.0)\n"];
+    [r appendString:@"MomentsTagFilter 诊断 (v1.4.1)\n"];
     [r appendFormat:@"开关: %@  已选标签: %@  含未标签: %@\n",
         [m enabled]?@"开":@"关",
         [m selectedNames].count?[[m selectedNames] componentsJoinedByString:@", "]:@"(无)",
@@ -765,13 +795,20 @@ static NSString *MTFBuildDiagnostics(void){
         [r appendString:@"⚠️ 缓存与现算不一致: 缓存是旧的或被冷启动毒化\n"];
     ContactTagMgr *tm=[m tagMgr];
     for(NSString *name in [m selectedNames]){
-        NSMutableArray *sample=[NSMutableArray array]; NSInteger cnt=-1;
+        NSMutableArray *sample=[NSMutableArray array]; NSInteger cnt=-1; id firstEl=nil;
         @try{ NSArray *cs=[tm getContactsForTagName:name];
-            if([cs isKindOfClass:[NSArray class]]){ cnt=(NSInteger)cs.count;
+            if([cs isKindOfClass:[NSArray class]]){ cnt=(NSInteger)cs.count; firstEl=cs.count?cs[0]:nil;
                 for(id c in cs){ NSString *u=MTFUsernameOfMember(c); if(u.length){ [sample addObject:u]; if(sample.count>=3) break; } } }
         }@catch(__unused id e){}
         [r appendFormat:@"标签[%@]: 成员 %ld 人, 样本: %@\n", name,(long)cnt,
             sample.count?[sample componentsJoinedByString:@", "]:@"(无)"];
+        if(firstEl){ // 元素类型探针：成员元素到底是什么类、解析后能否拿到名字
+            id rc=[m resolveContact:firstEl];
+            [r appendFormat:@"  元素类型: %@ → 解析为: %@ / 名字: %@\n",
+                NSStringFromClass([firstEl class]),
+                rc?NSStringFromClass([rc class]):@"(失败)",
+                rc?MTFDisplayNameOfContact(rc):@"-"];
+        }
     }
     WCFacade *f=m.facade;
     unsigned long long raw=m.rawCount;
@@ -914,7 +951,7 @@ static void MTFRegisterIntoPluginsMgr(void){
     @try {
         WCPluginsMgr *mgr=[cls sharedInstance]; BOOL exists=NO;
         @try { for(id p in [mgr plugins]){ NSString *tt=nil; @try{ tt=[p valueForKey:@"title"]; }@catch(__unused id e){} if([tt isEqualToString:@"朋友圈标签筛选"]){ exists=YES; break; } } } @catch(__unused id e){}
-        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.4.0" controller:@"MTFSettingsViewController"];
+        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.4.1" controller:@"MTFSettingsViewController"];
     } @catch(__unused id e){}
 }
 
