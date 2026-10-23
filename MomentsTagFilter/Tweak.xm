@@ -35,7 +35,7 @@
 @interface ContactTagMgr : NSObject
 - (NSArray *)getAllLabelName;
 - (NSArray *)getContactsForTagName:(NSString *)name;   // 标签名 -> 成员
-- (NSArray *)getContactsForLabel:(id)labelID;          // 标签ID -> 成员
+- (NSArray *)getLabelsNameForContact:(id)contact;      // 某联系人 -> 其标签名数组
 - (NSDictionary *)getDicWithUserNameForAllTag;         // 已打标签的 用户名 -> 标签
 @end
 
