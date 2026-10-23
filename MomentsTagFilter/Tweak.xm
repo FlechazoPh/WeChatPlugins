@@ -466,6 +466,41 @@ static void MTFRebuildMapIfNeeded(WCFacade *self, unsigned long long origCount){
 
 %end
 
+#pragma mark - 信息流头像长按：辅助函数（置于 Logos 指令块之外，避免解析问题）
+
+static void MTFAttachLongPress(UIViewController *vc) {
+    UIView *avatars[2] = {nil, nil};
+    @try {
+        id eh = [vc valueForKey:@"_expandableHeader"];
+        if (eh && [eh respondsToSelector:@selector(headImageView)])
+            avatars[0] = ((id(*)(id,SEL))objc_msgSend)(eh, @selector(headImageView));
+    } @catch (__unused id e) {}
+    @try {
+        id hv = [vc valueForKey:@"_headerView"];
+        if (hv && [hv respondsToSelector:@selector(m_headImageView)])
+            avatars[1] = ((id(*)(id,SEL))objc_msgSend)(hv, @selector(m_headImageView));
+    } @catch (__unused id e) {}
+    for (int i = 0; i < 2; i++) {
+        UIView *av = avatars[i];
+        if (![av isKindOfClass:[UIView class]]) continue;
+        if (objc_getAssociatedObject(av, "mtf_lp")) continue;
+        av.userInteractionEnabled = YES;
+        UILongPressGestureRecognizer *lp = [[UILongPressGestureRecognizer alloc]
+            initWithTarget:vc action:@selector(mtf_onAvatarLongPress:)];
+        lp.minimumPressDuration = 0.5;
+        [av addGestureRecognizer:lp];
+        objc_setAssociatedObject(av, "mtf_lp", @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+}
+
+static void MTFPresentSettings(UIViewController *host) {
+    MTFSettingsViewController *vc = [MTFSettingsViewController new];
+    vc.presentedModally = YES;
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
+    nav.modalPresentationStyle = UIModalPresentationFormSheet;
+    [host presentViewController:nav animated:YES completion:nil];
+}
+
 #pragma mark - Hook：信息流页 —— 长按「我的头像」进入筛选
 
 %hook WCTimeLineViewController
@@ -486,29 +521,13 @@ static void MTFRebuildMapIfNeeded(WCFacade *self, unsigned long long origCount){
 
 %new
 - (void)mtf_attachLongPress {
-    UIView *avatars[2]={nil,nil};
-    @try { id eh=[self valueForKey:@"_expandableHeader"]; if(eh && [eh respondsToSelector:@selector(headImageView)]) avatars[0]=((id(*)(id,SEL))objc_msgSend)(eh,@selector(headImageView)); } @catch(__unused id e){}
-    @try { id hv=[self valueForKey:@"_headerView"]; if(hv && [hv respondsToSelector:@selector(m_headImageView)]) avatars[1]=((id(*)(id,SEL))objc_msgSend)(hv,@selector(m_headImageView)); } @catch(__unused id e){}
-    for(int i=0;i<2;i++){
-        UIView *av=avatars[i];
-        if(![av isKindOfClass:[UIView class]]) continue;
-        if(objc_getAssociatedObject(av,"mtf_lp")) continue;
-        av.userInteractionEnabled=YES;
-        UILongPressGestureRecognizer *lp=[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(mtf_onAvatarLongPress:)];
-        lp.minimumPressDuration=0.5;
-        [av addGestureRecognizer:lp];
-        objc_setAssociatedObject(av,"mtf_lp",@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
+    MTFAttachLongPress(self);
 }
 
 %new
 - (void)mtf_onAvatarLongPress:(UILongPressGestureRecognizer *)g {
-    if(g.state!=UIGestureRecognizerStateBegan) return;
-    MTFSettingsViewController *vc=[MTFSettingsViewController new];
-    vc.presentedModally=YES;
-    UINavigationController *nav=[[UINavigationController alloc] initWithRootViewController:vc];
-    nav.modalPresentationStyle=UIModalPresentationFormSheet;
-    [self presentViewController:nav animated:YES completion:nil];
+    if (g.state != UIGestureRecognizerStateBegan) return;
+    MTFPresentSettings(self);
 }
 
 %end
