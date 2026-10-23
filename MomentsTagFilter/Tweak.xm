@@ -206,7 +206,7 @@ static NSUInteger gMapCount(void);
 // 后台精确计算「无标签好友」集合（好友且未打任何标签）
 - (void)computeUntaggedAsyncThen:(void(^)(void))done {
     [self rebuildTaggedSet];
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_UTILITY,0),^{
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT,0),^{
         NSMutableSet *out=[NSMutableSet set];
         @try {
             CContactMgr *cm=[self contactMgr];
