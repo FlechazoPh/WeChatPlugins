@@ -34,14 +34,15 @@
 
 @interface ContactTagMgr : NSObject
 - (NSArray *)getAllLabelName;
-- (NSArray *)getContactsForTagName:(NSString *)name;   // 标签名 -> 成员
-- (NSArray *)getLabelsNameForContact:(id)contact;      // 某联系人 -> 其标签名数组
+- (NSArray *)getContactsForTagName:(NSString *)name;   // 标签名 -> 成员（可靠，人数正确）
 - (NSDictionary *)getDicWithUserNameForAllTag;         // 已打标签的 用户名 -> 标签
 @end
 
 @interface CBaseContact : NSObject
 - (NSString *)m_nsUsrName;
-- (unsigned int)m_uiFriendScene;
+- (BOOL)isMyContact;        // 是否我的好友
+- (BOOL)isBrandContact;     // 公众号/品牌
+- (BOOL)isChatroom;         // 群
 @end
 
 @interface CContactMgr : NSObject
@@ -78,10 +79,10 @@ static NSString *const kMTFSelectedNames  = @"MTFSelectedTagNames";
 static NSString *const kMTFIncludeUntagged= @"MTFIncludeUntagged";
 static NSString *const kMTFNoTagKey       = @"__MTF_NOTAG__";
 
-static const NSUInteger kMTFTargetMatch   = 12;   // 目标：补拉到至少这么多条匹配项
-static const NSUInteger kMTFMaxAutoPages   = 6;   // 单次筛选最多自动补拉的页数（防封）
-static const NSTimeInterval kMTFPageDelay  = 2.0; // 每次补拉间隔（防封）
-static const NSTimeInterval kMTFFillCooldown = 4.0;
+static const NSUInteger kMTFTargetMatch   = 10;   // 目标：补拉到至少这么多条匹配项
+static const NSUInteger kMTFMaxAutoPages   = 10;  // 单次筛选最多自动补拉的页数（防封）
+static const NSTimeInterval kMTFPageDelay  = 1.5; // 每次补拉间隔（防封）
+static const NSTimeInterval kMTFFillCooldown = 3.0;
 
 static NSString *MTFAuthorOfItem(id item) {
     if ([item respondsToSelector:@selector(username)]) {
@@ -98,11 +99,15 @@ static NSUInteger gMapCount(void);
 #pragma mark - 筛选引擎
 
 @interface MTFManager : NSObject
+@property (nonatomic, strong) NSSet<NSString *> *allowedUsernames;  // 选中标签的成员并集（惰性算）
+@property (nonatomic, strong) NSSet<NSString *> *taggedUnion;       // 所有已打标签的用户名
+@property (nonatomic, assign) NSUInteger dataGen;                   // allowed/tagged 的计算代际
 @property (nonatomic, strong) NSSet<NSString *> *untaggedFriends;   // 无标签的好友（异步算，仅用于显示人数）
 @property (nonatomic, strong) NSMutableDictionary *countCache;      // 标签名 -> 人数
 @property (nonatomic, strong) NSMutableDictionary *decisionCache;   // 用户名 -> 是否命中（按代际失效）
 @property (nonatomic, assign) NSUInteger decisionGen;
 @property (nonatomic, assign) NSUInteger generation;
+@property (nonatomic, strong) UIView *hud;                          // 加载转圈
 @property (nonatomic, weak)   WCTimeLineViewController *activeMomentsVC;
 @property (nonatomic, weak)   WCFacade *facade;
 // 补拉状态
@@ -196,37 +201,59 @@ static NSUInteger gMapCount(void);
 
 - (BOOL)isActive { return [self enabled] && ([self selectedNames].count>0 || [self includeUntagged]); }
 
-// 非好友（系统/公众号/群/企业号等）用户名，统计无标签好友时需排除
-static BOOL MTFIsNonFriendUsername(NSString *u){
-    if(![u isKindOfClass:[NSString class]] || !u.length) return YES;
-    if([u hasSuffix:@"@chatroom"] || [u hasSuffix:@"@openim"] || [u hasSuffix:@"@app"]) return YES;
-    if([u hasPrefix:@"gh_"]) return YES;
-    static NSSet *sys=nil; static dispatch_once_t t;
-    dispatch_once(&t,^{ sys=[NSSet setWithArray:@[@"filehelper",@"weixin",@"fmessage",@"floatbottle",
-        @"qqmail",@"tmessage",@"qmessage",@"newsapp",@"blogapp",@"facebookapp",@"masssendapp",
-        @"medianote",@"weibo",@"brandsessionholder",@"officialaccounts",@"notification_messages",
-        @"exmail_tool",@"mphelper",@"opencustomerservicemsg",@"notifymessage"]]; });
-    return [sys containsObject:u];
+static NSString *MTFUsernameOfMember(id c){
+    if([c isKindOfClass:[NSString class]]) return c;
+    if([c respondsToSelector:@selector(m_nsUsrName)]) { id u=[c m_nsUsrName]; if([u isKindOfClass:[NSString class]]) return u; }
+    return nil;
+}
+static BOOL MTFIsFriend(id c){
+    if(!c) return NO;
+    @try {
+        if([c respondsToSelector:@selector(isChatroom)] && [c isChatroom]) return NO;
+        if([c respondsToSelector:@selector(isBrandContact)] && [c isBrandContact]) return NO;
+        if([c respondsToSelector:@selector(isMyContact)]) return [c isMyContact];
+    } @catch(__unused id e){}
+    return NO;
 }
 
-- (NSSet<NSString *> *)selectedNameSet { return [NSSet setWithArray:[self selectedNames]]; }
+// 惰性计算：选中标签成员并集 + 全部已打标签用户名。按代际缓存，修复冷启动空白。
+- (void)ensureSets {
+    if(self.dataGen==self.generation && self.allowedUsernames) return;
+    ContactTagMgr *mgr=[self tagMgr];
+    NSMutableSet *allowed=[NSMutableSet set];
+    @try {
+        for(NSString *name in [self selectedNames]){
+            NSArray *cs=nil; @try{ cs=[mgr getContactsForTagName:name]; }@catch(__unused id e){}
+            for(id c in cs){ NSString *u=MTFUsernameOfMember(c); if(u.length) [allowed addObject:u]; }
+        }
+    } @catch(__unused id e){}
+    NSMutableSet *tagged=[NSMutableSet set];
+    @try { NSDictionary *d=[mgr getDicWithUserNameForAllTag];
+        if([d isKindOfClass:[NSDictionary class]]) for(id k in d) if([k isKindOfClass:[NSString class]]) [tagged addObject:k];
+    } @catch(__unused id e){}
+    self.allowedUsernames=allowed; self.taggedUnion=tagged;
+    self.dataGen=self.generation;
+    self.decisionCache=[NSMutableDictionary dictionary]; self.decisionGen=self.generation;
+}
 
-// 后台统计「无标签好友」人数：好友，且自身标签为空（与系统通讯录一致）
+// 后台统计「未设置标签的朋友」人数：直接基于通讯录——好友(isMyContact) 且 不在已打标签集合
 - (void)computeUntaggedAsyncThen:(void(^)(void))done {
+    NSSet *tagged=nil;
+    @try { NSDictionary *d=[[self tagMgr] getDicWithUserNameForAllTag];
+        if([d isKindOfClass:[NSDictionary class]]) tagged=[NSSet setWithArray:[d allKeys]];
+    } @catch(__unused id e){}
+    NSSet *taggedSet=tagged?:[NSSet set];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT,0),^{
         NSMutableSet *out=[NSMutableSet set];
         @try {
-            CContactMgr *cm=[self contactMgr]; ContactTagMgr *tm=[self tagMgr];
+            CContactMgr *cm=[self contactMgr];
             NSArray *all=nil; @try{ all=[cm getAllContactUserName]; }@catch(__unused id e){}
-            if((![all isKindOfClass:[NSArray class]]||!all.count))
-                @try{ all=[cm valueForKey:@"getAllContactUserNameFromCache"]; }@catch(__unused id e){}
             if([all isKindOfClass:[NSArray class]]){
                 for(NSString *u in all){
-                    if(MTFIsNonFriendUsername(u)) continue;
+                    if(![u isKindOfClass:[NSString class]]||!u.length) continue;
+                    if([taggedSet containsObject:u]) continue;      // 已打标签 → 跳过
                     id c=nil; @try{ c=[cm getContactByName:u]; }@catch(__unused id e){}
-                    if(!c) continue;
-                    NSArray *labels=nil; @try{ labels=[tm getLabelsNameForContact:c]; }@catch(__unused id e){}
-                    if(![labels isKindOfClass:[NSArray class]] || labels.count==0) [out addObject:u];
+                    if(MTFIsFriend(c)) [out addObject:u];            // 是好友且无标签
                 }
             }
         } @catch(__unused id e){}
@@ -236,29 +263,21 @@ static BOOL MTFIsNonFriendUsername(NSString *u){
 
 - (NSInteger)untaggedCount { return self.untaggedFriends? (NSInteger)self.untaggedFriends.count : -1; }
 
-// 命中判定：直接读「该好友自身的标签」，与系统通讯录标签一致；惰性计算，天然修复冷启动空白
+// 命中判定：选中标签成员用「标签→成员」(人数已验证正确)；未设置标签用「好友且不在已打标签集合」
 - (BOOL)isUsernameAllowed:(NSString *)u {
     if(![self isActive]) return YES;
-    if(![u isKindOfClass:[NSString class]] || !u.length) return NO; // 广告/无作者：筛选时隐藏
-    if(self.decisionGen!=self.generation || !self.decisionCache){ self.decisionCache=[NSMutableDictionary dictionary]; self.decisionGen=self.generation; }
-    NSNumber *cached=self.decisionCache[u]; if(cached) return cached.boolValue;
-    BOOL ok=NO;
-    @try {
-        CContactMgr *cm=[self contactMgr];
-        id contact = cm ? [cm getContactByName:u] : nil;
-        if(contact){ // 非好友/广告无 contact → 筛选时隐藏
-            ContactTagMgr *tm=[self tagMgr];
-            NSArray *labels=nil; @try{ labels=[tm getLabelsNameForContact:contact]; }@catch(__unused id e){}
-            if([labels isKindOfClass:[NSArray class]] && labels.count){
-                NSSet *sel=[self selectedNameSet];
-                for(id n in labels){ if([n isKindOfClass:[NSString class]] && [sel containsObject:n]){ ok=YES; break; } }
-            } else {
-                ok=[self includeUntagged]; // 该好友无任何标签 → 命中「未设置标签的朋友」
-            }
-        }
-    } @catch(__unused id e){}
-    self.decisionCache[u]=@(ok);
-    return ok;
+    if(![u isKindOfClass:[NSString class]] || !u.length) return NO; // 广告/无作者：隐藏
+    [self ensureSets];
+    if([self.allowedUsernames containsObject:u]) return YES;
+    if([self includeUntagged]){
+        if([self.taggedUnion containsObject:u]) return NO;          // 有标签但未选中
+        NSNumber *cached=self.decisionCache[u]; if(cached) return cached.boolValue;
+        BOOL isFriend=NO;
+        @try { id c=[[self contactMgr] getContactByName:u]; isFriend=MTFIsFriend(c); } @catch(__unused id e){}
+        self.decisionCache[u]=@(isFriend);
+        return isFriend;
+    }
+    return NO;
 }
 
 - (void)reloadMoments {
@@ -267,6 +286,28 @@ static BOOL MTFIsNonFriendUsername(NSString *u){
         @try{ if([vc respondsToSelector:@selector(reloadDataWrap)]) [vc reloadDataWrap]; }@catch(__unused id e){}
         @try{ if([vc respondsToSelector:@selector(reloadTableView)]) [vc reloadTableView]; }@catch(__unused id e){}
     });
+}
+
+// 加载转圈（覆盖在朋友圈页中部）
+- (void)showHUD {
+    dispatch_async(dispatch_get_main_queue(),^{
+        UIView *host=self.activeMomentsVC.view; if(!host) return;
+        if(self.hud && self.hud.superview) return;
+        UIView *box=[[UIView alloc] initWithFrame:CGRectMake(0,0,120,120)];
+        box.center=CGPointMake(host.bounds.size.width/2, host.bounds.size.height/2);
+        box.autoresizingMask=UIViewAutoresizingFlexibleTopMargin|UIViewAutoresizingFlexibleBottomMargin|UIViewAutoresizingFlexibleLeftMargin|UIViewAutoresizingFlexibleRightMargin;
+        box.backgroundColor=[[UIColor blackColor] colorWithAlphaComponent:0.72];
+        box.layer.cornerRadius=14;
+        UIActivityIndicatorView *ind=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhiteLarge];
+        ind.center=CGPointMake(60,46); [ind startAnimating]; [box addSubview:ind];
+        UILabel *lb=[[UILabel alloc] initWithFrame:CGRectMake(0,78,120,22)];
+        lb.text=@"正在加载…"; lb.textColor=[UIColor whiteColor]; lb.font=[UIFont systemFontOfSize:14]; lb.textAlignment=NSTextAlignmentCenter;
+        [box addSubview:lb];
+        [host addSubview:box]; self.hud=box;
+    });
+}
+- (void)hideHUD {
+    dispatch_async(dispatch_get_main_queue(),^{ [self.hud removeFromSuperview]; self.hud=nil; });
 }
 
 - (void)applyFilterChanged {
@@ -282,6 +323,7 @@ static BOOL MTFIsNonFriendUsername(NSString *u){
     if(self.filling) return;
     if(now-self.lastFillAt < kMTFFillCooldown) return;
     self.lastFillAt=now; self.filling=YES; self.noMore=NO; self.autoPages=0;
+    [self showHUD];
     dispatch_async(dispatch_get_main_queue(),^{
         @try{ [f updateTimelineHead]; }@catch(__unused id e){}   // 刷新一次最新
         [self scheduleFillStep];
@@ -295,10 +337,12 @@ static BOOL MTFIsNonFriendUsername(NSString *u){
 }
 
 - (void)fillStep {
-    if(![self isActive]){ self.filling=NO; return; }
-    WCFacade *f=self.facade; if(!f){ self.filling=NO; return; }
+    if(![self isActive]){ self.filling=NO; [self hideHUD]; return; }
+    WCFacade *f=self.facade; if(!f){ self.filling=NO; [self hideHUD]; return; }
     NSUInteger matched = gMapCount();         // 当前匹配条数
-    if(matched>=kMTFTargetMatch || self.autoPages>=kMTFMaxAutoPages || self.noMore){ self.filling=NO; return; }
+    if(matched>=kMTFTargetMatch || self.autoPages>=kMTFMaxAutoPages || self.noMore){
+        self.filling=NO; [self hideHUD]; return;
+    }
     self.autoPages++;
     @try{ [f updateTimelineTail]; }@catch(__unused id e){}  // 加载更旧一页
     [self reloadMoments];
@@ -556,7 +600,7 @@ static void MTFRegisterIntoPluginsMgr(void){
     @try {
         WCPluginsMgr *mgr=[cls sharedInstance]; BOOL exists=NO;
         @try { for(id p in [mgr plugins]){ NSString *tt=nil; @try{ tt=[p valueForKey:@"title"]; }@catch(__unused id e){} if([tt isEqualToString:@"朋友圈标签筛选"]){ exists=YES; break; } } } @catch(__unused id e){}
-        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.3.0" controller:@"MTFSettingsViewController"];
+        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.3.1" controller:@"MTFSettingsViewController"];
     } @catch(__unused id e){}
 }
 
