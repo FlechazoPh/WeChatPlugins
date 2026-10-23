@@ -46,6 +46,7 @@ jobs:
       - name: Build rootless deb
         run: |
           make clean || true
+          rm -f packages/*.deb
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
           mkdir -p "$GITHUB_WORKSPACE/dist"
           cp packages/*.deb "$GITHUB_WORKSPACE/dist/MomentsTagFilter_${VERSION}_rootless.deb"
@@ -54,6 +55,7 @@ jobs:
       - name: Build rootful deb
         run: |
           make clean || true
+          rm -f packages/*.deb
           make package FINALPACKAGE=1
           cp packages/*.deb "$GITHUB_WORKSPACE/dist/MomentsTagFilter_${VERSION}_rootful.deb"
           ls -la "$GITHUB_WORKSPACE/dist"
