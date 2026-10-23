@@ -511,20 +511,18 @@ static void MTFPresentSettings(UIViewController *host) {
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
     [MTFManager shared].activeMomentsVC=self;
-    [self mtf_attachLongPress];
+    MTFAttachLongPress(self);
     if([[MTFManager shared] isActive]) [[MTFManager shared] startFillBecause:@"moments-appear"];
 }
 
-- (void)viewDidLayoutSubviews { %orig; [self mtf_attachLongPress]; }
+- (void)viewDidLayoutSubviews {
+    %orig;
+    MTFAttachLongPress(self);
+}
 
 - (void)viewWillDisappear:(BOOL)animated {
     %orig;
     if([MTFManager shared].activeMomentsVC==self) [MTFManager shared].activeMomentsVC=nil;
-}
-
-%new
-- (void)mtf_attachLongPress {
-    MTFAttachLongPress(self);
 }
 
 %new
