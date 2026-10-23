@@ -462,7 +462,10 @@ static void MTFRebuildMapIfNeeded(WCFacade *self, unsigned long long origCount){
     return %orig;
 }
 
-- (void)onNoMoreTimelineData { [MTFManager shared].noMore=YES; %orig; }
+- (void)onNoMoreTimelineData {
+    [MTFManager shared].noMore = YES;
+    %orig;
+}
 
 %end
 
