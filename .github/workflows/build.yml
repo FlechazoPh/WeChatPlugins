@@ -1,11 +1,16 @@
 name: Build MomentsTagFilter deb
 
-# 自动在 macOS runner 上用 Theos 编译 MomentsTagFilter/ 子项目，产出 .deb。
+# 自动在 macOS runner 上用 Theos 编译 MomentsTagFilter/ 子项目，同时产出 rootless 与 rootful 两种 .deb。
 # 触发：push，或 Actions 页 "Run workflow"。产物在运行页 Artifacts: "MomentsTagFilter-deb"。
+# push 到 main 时，两个 deb 会自动发布到 GitHub Release（tag = v<control 里的 Version>）；
+# Release 说明的「更新日志」优先取 CHANGELOG.md 中该版本的小节，没有小节时用上一个 tag 以来的提交记录生成。
 
 on:
   push:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -16,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Theos + iOS SDK
         run: |
@@ -30,17 +37,68 @@ jobs:
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
           echo "Using SDK: $SRC"
 
-      - name: Build package
+      - name: Read version
+        run: |
+          VERSION=$(grep -E '^Version:' control | awk '{print $2}')
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Version: $VERSION"
+
+      - name: Build rootless deb
         run: |
           make clean || true
-          # 先按 rootless 方案；若失败回退到 rootful
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless || make package FINALPACKAGE=1
-          echo "---- packages ----"
-          ls -la packages/
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          cp packages/*.deb "$GITHUB_WORKSPACE/dist/MomentsTagFilter_${VERSION}_rootless.deb"
+          ls -la "$GITHUB_WORKSPACE/dist"
 
-      - name: Upload deb artifact
+      - name: Build rootful deb
+        run: |
+          make clean || true
+          make package FINALPACKAGE=1
+          cp packages/*.deb "$GITHUB_WORKSPACE/dist/MomentsTagFilter_${VERSION}_rootful.deb"
+          ls -la "$GITHUB_WORKSPACE/dist"
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: MomentsTagFilter-deb
-          path: MomentsTagFilter/packages/*.deb
-          if-no-files-found: error
+          path: dist/*.deb
+
+      - name: Publish GitHub Release
+        if: github.ref == 'refs/heads/main'
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${VERSION}"
+          NOTES="$RUNNER_TEMP/notes.md"
+          {
+            echo "## MomentsTagFilter ${TAG}"
+            echo
+            echo "## 📝 更新日志"
+            echo
+            if [ -f CHANGELOG.md ] && grep -qE "^## .*${VERSION}" CHANGELOG.md; then
+              awk -v ver="$VERSION" '
+                $0 ~ "^## " { if (found) exit; if (index($0, ver)) found=1 }
+                found { print }
+              ' CHANGELOG.md | tail -n +2
+            else
+              LASTTAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+              if [ -n "$LASTTAG" ]; then RANGE="$LASTTAG..HEAD"; else RANGE="HEAD"; fi
+              git log $RANGE --no-merges --pretty=format:'- %s' | grep -vE '^- (ci:|ci：|流水线)' || true
+              echo
+            fi
+            echo "## 📦 安装包"
+            echo
+            echo "- \`MomentsTagFilter_${VERSION}_rootless.deb\`：rootless 越狱（Dopamine、palera1n rootless 等，安装路径 /var/jb）"
+            echo "- \`MomentsTagFilter_${VERSION}_rootful.deb\`：rootful 越狱（checkra1n、unc0ver 等，安装路径 /）"
+            echo
+            echo "_构建时间：$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')（北京时间） · 提交：${GITHUB_SHA:0:7}_"
+          } > "$NOTES"
+          cat "$NOTES"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.deb --clobber
+            gh release edit "$TAG" --title "MomentsTagFilter $TAG" --notes-file "$NOTES"
+          else
+            gh release create "$TAG" dist/*.deb --title "MomentsTagFilter $TAG" --notes-file "$NOTES"
+          fi
