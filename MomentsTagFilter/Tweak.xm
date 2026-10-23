@@ -498,10 +498,12 @@ static NSString *MTFDisplayNameOfContact(id c){
         id n=[c getContactDisplayName];
         if([n isKindOfClass:[NSString class]] && [(NSString*)n length]) return n;
     } } @catch(__unused id e){}
-    @try { if([c respondsToSelector:@selector(m_nsNickName)]){
-        id n=[c m_nsNickName];
-        if([n isKindOfClass:[NSString class]] && [(NSString*)n length]) return n;
-    } } @catch(__unused id e){}
+    @try { SEL nickSel=@selector(m_nsNickName);
+        if([c respondsToSelector:nickSel]){
+            id n=((id(*)(id,SEL))objc_msgSend)(c, nickSel);
+            if([n isKindOfClass:[NSString class]] && [(NSString*)n length]) return n;
+        }
+    } @catch(__unused id e){}
     @try { id n=[c valueForKey:@"m_nsNickName"];
         if([n isKindOfClass:[NSString class]] && [(NSString*)n length]) return n;
     } @catch(__unused id e){}
