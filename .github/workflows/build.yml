@@ -49,7 +49,7 @@ jobs:
           rm -f packages/*.deb
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
           mkdir -p "$GITHUB_WORKSPACE/dist"
-          cp packages/*.deb "$GITHUB_WORKSPACE/dist/MomentsTagFilter_${VERSION}_rootless.deb"
+          cp packages/*.deb "$GITHUB_WORKSPACE/dist/momentsfil_${VERSION}_rootless.deb"
           ls -la "$GITHUB_WORKSPACE/dist"
 
       - name: Build rootful deb
@@ -57,7 +57,7 @@ jobs:
           make clean || true
           rm -f packages/*.deb
           make package FINALPACKAGE=1
-          cp packages/*.deb "$GITHUB_WORKSPACE/dist/MomentsTagFilter_${VERSION}_rootful.deb"
+          cp packages/*.deb "$GITHUB_WORKSPACE/dist/momentsfil_${VERSION}_rootful.deb"
           ls -la "$GITHUB_WORKSPACE/dist"
 
       - name: Upload artifacts
@@ -92,8 +92,8 @@ jobs:
             fi
             echo "## 📦 安装包"
             echo
-            echo "- \`MomentsTagFilter_${VERSION}_rootless.deb\`：rootless 越狱（Dopamine、palera1n rootless 等，安装路径 /var/jb）"
-            echo "- \`MomentsTagFilter_${VERSION}_rootful.deb\`：rootful 越狱（checkra1n、unc0ver 等，安装路径 /）"
+            echo "- \`momentsfil_${VERSION}_rootless.deb\`：rootless 越狱（Dopamine、palera1n rootless 等，安装路径 /var/jb）"
+            echo "- \`momentsfil_${VERSION}_rootful.deb\`：rootful 越狱（checkra1n、unc0ver 等，安装路径 /）"
             echo
             echo "_构建时间：$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')（北京时间） · 提交：${GITHUB_SHA:0:7}_"
           } > "$NOTES"
