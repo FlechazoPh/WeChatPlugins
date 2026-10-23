@@ -8,6 +8,11 @@ name: Build MomentsTagFilter deb
 on:
   push:
   workflow_dispatch:
+    inputs:
+      tg_test:
+        description: '手动运行时向 TG 群发送一条测试转发（带测试标记）'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -67,6 +72,7 @@ jobs:
           path: dist/*.deb
 
       - name: Publish GitHub Release
+        id: publish
         if: github.ref == 'refs/heads/main'
         working-directory: ${{ github.workspace }}
         env:
@@ -101,6 +107,66 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/*.deb --clobber
             gh release edit "$TAG" --title "MomentsTagFilter $TAG" --notes-file "$NOTES"
+            echo "created=false" >> "$GITHUB_OUTPUT"
           else
             gh release create "$TAG" dist/*.deb --title "MomentsTagFilter $TAG" --notes-file "$NOTES"
+            echo "created=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # 主动推送到 Telegram 群（替代原先的本机定时轮询中继）：
+      # 仅在本次新建了 Release 时发送，避免重复推送；手动运行可勾 tg_test 发一条带标记的测试。
+      - name: Notify Telegram
+        if: github.ref == 'refs/heads/main' && (steps.publish.outputs.created == 'true' || inputs.tg_test)
+        working-directory: ${{ github.workspace }}
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          TG_TEST: ${{ inputs.tg_test }}
+        run: |
+          python3 - <<'PY'
+          import glob, html, json, os, re, sys, urllib.parse, urllib.request, uuid
+          token = os.environ['TG_BOT_TOKEN']; chat = os.environ['TG_CHAT_ID']; ver = os.environ['VERSION']
+          notes = open(os.path.join(os.environ['RUNNER_TEMP'], 'notes.md'), encoding='utf-8').read()
+          m = re.search(r'## 📝 更新日志\s*(.*?)\s*## 📦', notes, re.S)
+          raw = m.group(1).strip() if m else ''
+          out = []
+          for ln in raw.splitlines():
+              s = ln.rstrip()
+              if s.startswith('- '): s = '• ' + s[2:]
+              elif s.startswith('## '): s = s[3:]
+              s = html.escape(s, quote=False)
+              s = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', s)
+              s = re.sub(r'`([^`]+)`', r'<code>\1</code>', s)
+              out.append(s)
+          title = f"<b>📦 MomentsTagFilter v{ver} 发布</b>"
+          if os.environ.get('TG_TEST') == 'true': title += '（流水线转发测试）'
+          text = (title + '\n\n' + '\n'.join(out).strip())[:2600]
+
+          def post(path, fields, files=None):
+              url = f'https://api.telegram.org/bot{token}/{path}'
+              if files:
+                  b = '----mtf' + uuid.uuid4().hex
+                  body = b''
+                  for k, v in fields.items():
+                      body += (f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n').encode()
+                  for k, (fn, content) in files.items():
+                      body += (f'--{b}\r\nContent-Disposition: form-data; name="{k}"; filename="{fn}"\r\nContent-Type: application/octet-stream\r\n\r\n').encode() + content + b'\r\n'
+                  body += (f'--{b}--\r\n').encode()
+                  req = urllib.request.Request(url, data=body, headers={'Content-Type': f'multipart/form-data; boundary={b}'})
+              else:
+                  req = urllib.request.Request(url, data=urllib.parse.urlencode(fields).encode())
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  return json.load(r)
+
+          res = post('sendMessage', {'chat_id': chat, 'text': text, 'parse_mode': 'HTML', 'disable_web_page_preview': 'true'})
+          if not res.get('ok'):
+              print('sendMessage failed:', res); sys.exit(1)
+          mid = res['result']['message_id']
+          print('announcement message_id:', mid)
+          for path in sorted(glob.glob('dist/*.deb')):
+              r = post('sendDocument', {'chat_id': chat, 'reply_to_message_id': str(mid)},
+                       {'document': (os.path.basename(path), open(path, 'rb').read())})
+              if not r.get('ok'):
+                  print('sendDocument failed:', path, r); sys.exit(1)
+              print('document sent:', os.path.basename(path))
+          PY
