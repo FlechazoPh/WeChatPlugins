@@ -1,0 +1,46 @@
+name: Build MomentsTagFilter deb
+
+# 自动在 macOS runner 上用 Theos 编译 MomentsTagFilter/ 子项目，产出 .deb。
+# 触发：push，或 Actions 页 "Run workflow"。产物在运行页 Artifacts: "MomentsTagFilter-deb"。
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: MomentsTagFilter
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Theos + iOS SDK
+        run: |
+          brew install ldid dpkg make xz || true
+          export THEOS=$HOME/theos
+          git clone --quiet --recursive https://github.com/theos/theos.git "$THEOS"
+          curl -fsSL "https://github.com/theos/sdks/archive/refs/heads/master.zip" -o /tmp/sdks.zip
+          mkdir -p /tmp/sdks && unzip -q /tmp/sdks.zip -d /tmp/sdks
+          # 取一个可用的 iPhoneOS SDK（优先 16.5，否则任意一个）
+          SRC=$(ls -d /tmp/sdks/sdks-master/iPhoneOS16.5.sdk 2>/dev/null || ls -d /tmp/sdks/sdks-master/iPhoneOS*.sdk | head -1)
+          cp -R "$SRC" "$THEOS/sdks/"
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+          echo "Using SDK: $SRC"
+
+      - name: Build package
+        run: |
+          make clean || true
+          # 先按 rootless 方案；若失败回退到 rootful
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless || make package FINALPACKAGE=1
+          echo "---- packages ----"
+          ls -la packages/
+
+      - name: Upload deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MomentsTagFilter-deb
+          path: MomentsTagFilter/packages/*.deb
+          if-no-files-found: error
