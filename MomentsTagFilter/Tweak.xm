@@ -109,6 +109,8 @@ static NSString *MTFAuthorOfItem(id item) {
 static NSUInteger gMapCount(void);
 // 诊断报告（实现见下方 hook 区，需要直接读 facade 原始条目）
 static NSString *MTFBuildDiagnostics(void);
+// 设置面板呈现（实现见下方长按入口区）
+static void MTFPresentSettings(UIViewController *host);
 
 #pragma mark - 筛选引擎
 
@@ -122,6 +124,8 @@ static NSString *MTFBuildDiagnostics(void);
 @property (nonatomic, assign) NSUInteger decisionGen;
 @property (nonatomic, assign) NSUInteger generation;
 @property (nonatomic, strong) UIView *hud;                          // 加载转圈
+@property (nonatomic, weak)   UILabel *filterBadge;                 // 信息流上的筛选状态浮标
+@property (nonatomic, copy)   NSString *filterBadgeText;            // 浮标当前文案（去重用）
 @property (nonatomic, weak)   WCTimeLineViewController *activeMomentsVC;
 @property (nonatomic, weak)   WCFacade *facade;
 // 补拉状态（进度驱动：以底层条数是否真增长判断一页是否落地）
@@ -401,6 +405,52 @@ static BOOL MTFIsFriend(id c){
     dispatch_async(dispatch_get_main_queue(),^{ lb.text=txt; });
 }
 
+// 筛选状态浮标：筛选生效时在信息流底部显示「已选标签 · 匹配 N 条」，
+// 让用户一眼确认筛选到底有没有生效（点浮标打开设置面板）。
+- (void)refreshFilterBadge {
+    if(![self isActive]){ [self removeFilterBadge]; return; }
+    NSArray *names=[self selectedNames];
+    NSString *label=names.count?[names componentsJoinedByString:@"、"]:@"";
+    if([self includeUntagged]) label=label.length?[label stringByAppendingString:@"、未标签"]:@"未标签";
+    NSString *txt=[NSString stringWithFormat:@"  🏷 %@ · 匹配 %lu 条  ", label,(unsigned long)gMapCount()];
+    if([txt isEqualToString:self.filterBadgeText] && self.filterBadge.superview && self.filterBadge.superview==self.activeMomentsVC.view) return;
+    self.filterBadgeText=txt;
+    dispatch_async(dispatch_get_main_queue(),^{
+        UIViewController *vc=self.activeMomentsVC;
+        if(!vc || !vc.view || ![self isActive]) return;
+        UILabel *b=self.filterBadge;
+        if(!b || b.superview!=vc.view){
+            [b removeFromSuperview];
+            b=[[UILabel alloc] init];
+            b.backgroundColor=[[UIColor blackColor] colorWithAlphaComponent:0.72];
+            b.textColor=[UIColor whiteColor];
+            b.font=[UIFont systemFontOfSize:12];
+            b.textAlignment=NSTextAlignmentCenter;
+            b.layer.cornerRadius=13; b.layer.masksToBounds=YES;
+            b.userInteractionEnabled=YES;
+            [b addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(filterBadgeTapped)]];
+            [vc.view addSubview:b];
+            self.filterBadge=b;
+        }
+        b.text=self.filterBadgeText;
+        [b sizeToFit];
+        CGRect f=b.frame; f.size.height=26; f.size.width+=10;
+        f.origin.x=(vc.view.bounds.size.width-f.size.width)/2;
+        f.origin.y=vc.view.bounds.size.height-f.size.height-30;
+        b.frame=f;
+        b.autoresizingMask=UIViewAutoresizingFlexibleTopMargin|UIViewAutoresizingFlexibleLeftMargin|UIViewAutoresizingFlexibleRightMargin;
+        [vc.view bringSubviewToFront:b];
+    });
+}
+- (void)removeFilterBadge {
+    self.filterBadgeText=nil;
+    dispatch_async(dispatch_get_main_queue(),^{ [self.filterBadge removeFromSuperview]; self.filterBadge=nil; });
+}
+- (void)filterBadgeTapped {
+    UIViewController *vc=self.activeMomentsVC;
+    if(vc) MTFPresentSettings(vc);
+}
+
 - (void)applyFilterChanged {
     self.generation++;          // 使判定缓存与过滤投影失效
     [self reloadMoments];
@@ -533,12 +583,10 @@ static NSString *MTFDisplayNameOfContact(id c){
 }
 
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip {
-    UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+    UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
     id contact=self.contacts[ip.row];
     NSString *disp=MTFDisplayNameOfContact(contact);
-    NSString *user=MTFUsernameOfMember(contact);
-    c.textLabel.text=disp.length?disp:user;
-    if(user.length && ![user isEqualToString:disp]) c.detailTextLabel.text=user;
+    c.textLabel.text=disp.length?disp:MTFUsernameOfMember(contact); // 只显示名字，不显示 wxid
     c.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
     return c;
 }
@@ -782,7 +830,7 @@ static void MTFRebuildMapIfNeeded(WCFacade *self, unsigned long long origCount){
 static NSString *MTFBuildDiagnostics(void){
     MTFManager *m=[MTFManager shared];
     NSMutableString *r=[NSMutableString string];
-    [r appendString:@"MomentsTagFilter 诊断 (v1.4.1)\n"];
+    [r appendString:@"MomentsTagFilter 诊断 (v1.4.2)\n"];
     [r appendFormat:@"开关: %@  已选标签: %@  含未标签: %@\n",
         [m enabled]?@"开":@"关",
         [m selectedNames].count?[[m selectedNames] componentsJoinedByString:@", "]:@"(无)",
@@ -863,8 +911,9 @@ static NSString *MTFBuildDiagnostics(void){
     MTFManager *m=[MTFManager shared];
     m.facade=self;
     m.rawCount=orig;   // 回填底层总条数，供补拉的进度判定使用
-    if(![m isActive]) return orig;
+    if(![m isActive]){ [m removeFilterBadge]; return orig; }
     MTFRebuildMapIfNeeded(self,orig);
+    [m refreshFilterBadge];
     return (unsigned long long)gMap.count;
 }
 
@@ -913,7 +962,7 @@ static void MTFPresentSettings(UIViewController *host) {
     MTFSettingsViewController *vc = [MTFSettingsViewController new];
     vc.presentedModally = YES;
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
-    nav.modalPresentationStyle = UIModalPresentationFormSheet;
+    nav.modalPresentationStyle = UIModalPresentationFullScreen;
     [host presentViewController:nav animated:YES completion:nil];
 }
 
@@ -925,6 +974,7 @@ static void MTFPresentSettings(UIViewController *host) {
     %orig;
     [MTFManager shared].activeMomentsVC=self;
     MTFAttachLongPress(self);
+    [[MTFManager shared] refreshFilterBadge];
     if([[MTFManager shared] isActive]) [[MTFManager shared] startFillBecause:@"moments-appear"];
 }
 
@@ -953,7 +1003,7 @@ static void MTFRegisterIntoPluginsMgr(void){
     @try {
         WCPluginsMgr *mgr=[cls sharedInstance]; BOOL exists=NO;
         @try { for(id p in [mgr plugins]){ NSString *tt=nil; @try{ tt=[p valueForKey:@"title"]; }@catch(__unused id e){} if([tt isEqualToString:@"朋友圈标签筛选"]){ exists=YES; break; } } } @catch(__unused id e){}
-        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.4.1" controller:@"MTFSettingsViewController"];
+        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.4.2" controller:@"MTFSettingsViewController"];
     } @catch(__unused id e){}
 }
 
