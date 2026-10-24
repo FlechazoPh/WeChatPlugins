@@ -404,6 +404,7 @@ static BOOL MTFIsFriend(id c){
     };
     __block NSUInteger idx=0;
     __block void (^step)(void);
+    __weak void (^weakStep)(void); // 递归 block 用弱引用自指，避免 -Werror 的 retain-cycle 报错
     step = ^{
         if(idx>=names.count){
             sortCollected();
@@ -411,16 +412,17 @@ static BOOL MTFIsFriend(id c){
             return;
         }
         NSString *u=names[idx++];
-        if(![u isKindOfClass:[NSString class]]||!u.length){ step(); return; }
+        if(![u isKindOfClass:[NSString class]]||!u.length){ if(weakStep) weakStep(); return; }
         [self requestFirstPageForUsername:u completion:^(NSArray *cgiItems){
             // finish 已保证在主线程，collected 的读写都在主线程串行
             if(cgiItems.count) addItems(cgiItems);
             addItems([self cachedItemsForUsername:u maxCount:30]); // 缓存合并兜底
             sortCollected();
             if(onMemberDone) onMemberDone(u, [collected copy]);
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.8*NSEC_PER_SEC)),dispatch_get_main_queue(),step);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.8*NSEC_PER_SEC)),dispatch_get_main_queue(),^{ if(weakStep) weakStep(); });
         }];
     };
+    weakStep=step;
     step();
 }
 
