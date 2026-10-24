@@ -66,6 +66,11 @@
 - (void)reloadDataWrap;
 @end
 
+// 本地时间线缓存管理器（B2 聚合的数据源：只读本地缓存，不发新网络请求）
+@interface WCTimelineMgr : NSObject
+- (NSArray *)fetchCachedDataItemsForUsername:(NSString *)username withMaxCount:(NSInteger)maxCount;
+@end
+
 @interface WCPluginsMgr : NSObject
 + (instancetype)sharedInstance;
 - (void)registerControllerWithTitle:(NSString *)title version:(NSString *)version controller:(NSString *)controller;
@@ -297,6 +302,49 @@ static BOOL MTFIsFriend(id c){
 }
 
 - (NSInteger)untaggedCount { return self.untaggedFriends? (NSInteger)self.untaggedFriends.count : -1; }
+
+// 时间线管理器：经 facade 的 m_timelineMgr 取（facade 只在进过朋友圈页后才有）
+- (WCTimelineMgr *)timelineMgr {
+    WCFacade *f=self.facade; if(!f) return nil;
+    id tm=nil;
+    @try { tm=[f valueForKey:@"m_timelineMgr"]; } @catch(__unused id e){}
+    return [tm isKindOfClass:objc_getClass("WCTimelineMgr")]?tm:nil;
+}
+
+// 某用户本地已缓存的动态（WCDataItem 数组；无缓存/未进过朋友圈页时返回空）
+- (NSArray *)cachedItemsForUsername:(NSString *)u maxCount:(NSInteger)n {
+    WCTimelineMgr *tm=[self timelineMgr]; if(!tm||!u.length) return @[];
+    NSArray *items=nil;
+    @try { items=[tm fetchCachedDataItemsForUsername:u withMaxCount:n]; } @catch(__unused id e){}
+    return [items isKindOfClass:[NSArray class]]?items:@[];
+}
+
+// B2 聚合：多名成员的本地缓存动态合并，按时间倒序，去重（按 tid），上限 500 条。
+// 在后台队列执行，完成后回主线程。返回的每条仍是 WCDataItem，取作者/时间/文本时用安全读取。
+- (void)aggregateCachedItemsForUsernames:(NSArray<NSString *> *)names maxPerUser:(NSInteger)perUser completion:(void(^)(NSArray *items))done {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT,0),^{
+        NSMutableArray *all=[NSMutableArray array];
+        NSMutableSet *seenTids=[NSMutableSet set];
+        for(NSString *u in names){
+            if(![u isKindOfClass:[NSString class]]||!u.length) continue;
+            for(id item in [self cachedItemsForUsername:u maxCount:perUser]){
+                NSString *tid=nil;
+                @try { id v=[item valueForKey:@"tid"]; if([v isKindOfClass:[NSString class]]) tid=v; } @catch(__unused id e){}
+                if(tid.length){ if([seenTids containsObject:tid]) continue; [seenTids addObject:tid]; }
+                [all addObject:item];
+            }
+        }
+        [all sortUsingComparator:^NSComparisonResult(id a, id b){
+            unsigned int ta=0, tb=0;
+            @try { id va=[a valueForKey:@"createtime"]; if([va isKindOfClass:[NSNumber class]]) ta=[va unsignedIntValue]; } @catch(__unused id e){}
+            @try { id vb=[b valueForKey:@"createtime"]; if([vb isKindOfClass:[NSNumber class]]) tb=[vb unsignedIntValue]; } @catch(__unused id e){}
+            if(ta!=tb) return ta>tb?NSOrderedAscending:NSOrderedDescending;
+            return NSOrderedSame;
+        }];
+        if(all.count>500) [all removeObjectsInRange:NSMakeRange(500,all.count-500)];
+        dispatch_async(dispatch_get_main_queue(),^{ if(done) done(all); });
+    });
+}
 
 // 把标签成员元素解析成完整 CContact。真机实测（v1.4.0）：getContactsForTagName: 返回的
 // 元素拿不到显示名、直接传给个人页路由还会闪退——元素多半只是用户名或轻量对象。
@@ -540,6 +588,27 @@ static BOOL MTFIsFriend(id c){
 
 @end
 
+#pragma mark - 打开成员个人朋友圈页（B1/B2 共用）
+
+// 按用户名解析完整 CContact 后走宿主路由打开个人朋友圈页；解析不到或路由缺失时弹提示，不闪退。
+static void MTFOpenUserPage(UIViewController *from, NSString *username) {
+    id contact=[[MTFManager shared] resolveContact:username];
+    if(!contact){
+        UIAlertController *ac=[UIAlertController alertControllerWithTitle:@"无法打开" message:@"没能读取到这位好友的完整资料。" preferredStyle:UIAlertControllerStyleAlert];
+        [ac addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+        [from presentViewController:ac animated:YES completion:nil];
+        return;
+    }
+    Class router=objc_getClass("WCTimelineRouterHelper");
+    SEL sel=@selector(navigateToUserPageViewController:contact:scene:thumbnailCnt:source:);
+    if(router && [router respondsToSelector:sel]){
+        @try {
+            ((void(*)(id,SEL,id,id,unsigned int,unsigned int,id))objc_msgSend)
+                ((id)router, sel, from, contact, 0, 0, nil);
+        } @catch(__unused id e){}
+    }
+}
+
 #pragma mark - 成员名单（B1：点成员跳原生个人朋友圈页）
 
 static NSString *MTFDisplayNameOfContact(id c){
@@ -593,23 +662,89 @@ static NSString *MTFDisplayNameOfContact(id c){
 
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [t deselectRowAtIndexPath:ip animated:YES];
-    // 跳转前务必拿到完整 CContact：轻量对象/用户名直接传给路由会闪退（v1.4.0 实测）
-    id contact=[[MTFManager shared] resolveContact:self.contacts[ip.row]];
-    if(!contact){
-        UIAlertController *ac=[UIAlertController alertControllerWithTitle:@"无法打开" message:@"没能读取到这位好友的完整资料。" preferredStyle:UIAlertControllerStyleAlert];
-        [ac addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:ac animated:YES completion:nil];
-        return;
+    MTFOpenUserPage(self, MTFUsernameOfMember(self.contacts[ip.row]));
+}
+
+@end
+
+#pragma mark - 聚合动态页（B2：多名成员的本地缓存动态按时间合并）
+
+@interface MTFAggregateViewController : UITableViewController
+@property (nonatomic, strong) NSArray<NSString *> *usernames;  // 成员用户名
+@property (nonatomic, strong) NSArray *items;                  // WCDataItem，按时间倒序
+@property (nonatomic, strong) NSDictionary<NSString *, NSString *> *displayNames;
+@property (nonatomic, assign) BOOL loading;
+@end
+
+@implementation MTFAggregateViewController
+
+- (instancetype)init { return [super initWithStyle:UITableViewStyleGrouped]; }
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.loading=YES;
+    UIActivityIndicatorView *ind=nil;
+    if (@available(iOS 13.0, *)) ind=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+    else ind=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
+    [ind startAnimating];
+    self.tableView.tableHeaderView=ind;
+    NSArray<NSString *> *names=self.usernames;
+    [[MTFManager shared] aggregateCachedItemsForUsernames:names maxPerUser:30 completion:^(NSArray *items){
+        self.items=items;
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT,0),^{
+            NSMutableDictionary *map=[NSMutableDictionary dictionary];
+            for(id item in items){
+                NSString *u=MTFAuthorOfItem(item);
+                if(u.length && !map[u]){
+                    id c=[[MTFManager shared] resolveContact:u];
+                    NSString *d=c?MTFDisplayNameOfContact(c):nil;
+                    if(d.length) map[u]=d;
+                }
+            }
+            dispatch_async(dispatch_get_main_queue(),^{
+                self.displayNames=map;
+                self.loading=NO;
+                self.tableView.tableHeaderView=nil;
+                [self.tableView reloadData];
+            });
+        });
+    }];
+}
+
+- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return (NSInteger)self.items.count; }
+- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
+    if(self.loading) return @"正在读取本地缓存…";
+    if(!self.items.count) return @"本地没有缓存到这些成员的动态。先打开成员的个人页看一次（会缓存），再回来看聚合就会有更早内容。";
+    return @"本地已缓存的动态（按时间倒序，每人最多 30 条）。点任意一条，打开该成员的个人页看全部。";
+}
+
+- (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip {
+    UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+    id item=self.items[ip.row];
+    NSString *u=MTFAuthorOfItem(item);
+    NSString *disp=self.displayNames[u];
+    c.textLabel.text=disp.length?disp:u;
+    NSString *txt=nil;
+    @try { id v=[item valueForKey:@"contentDesc"]; if([v isKindOfClass:[NSString class]]) txt=v; } @catch(__unused id e){}
+    if(!txt.length) txt=@"（图片/视频动态）";
+    if(txt.length>80) txt=[[txt substringToIndex:80] stringByAppendingString:@"…"];
+    unsigned int tm=0;
+    @try { id v=[item valueForKey:@"createtime"]; if([v isKindOfClass:[NSNumber class]]) tm=[v unsignedIntValue]; } @catch(__unused id e){}
+    NSString *date=@"";
+    if(tm){
+        static NSDateFormatter *fmt=nil;
+        if(!fmt){ fmt=[[NSDateFormatter alloc] init]; fmt.dateFormat=@"yyyy-MM-dd HH:mm"; }
+        date=[fmt stringFromDate:[NSDate dateWithTimeIntervalSince1970:tm]];
     }
-    // 走宿主自己的路由打开个人朋友圈页；类/方法缺失时静默降级（不崩）
-    Class router=objc_getClass("WCTimelineRouterHelper");
-    SEL sel=@selector(navigateToUserPageViewController:contact:scene:thumbnailCnt:source:);
-    if(router && [router respondsToSelector:sel]){
-        @try {
-            ((void(*)(id,SEL,id,id,unsigned int,unsigned int,id))objc_msgSend)
-                ((id)router, sel, self, contact, 0, 0, nil);
-        } @catch(__unused id e){}
-    }
+    c.detailTextLabel.text=[NSString stringWithFormat:@"%@  %@", date, txt];
+    c.detailTextLabel.numberOfLines=2;
+    c.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
+    return c;
+}
+
+- (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip {
+    [t deselectRowAtIndexPath:ip animated:YES];
+    MTFOpenUserPage(self, MTFAuthorOfItem(self.items[ip.row]));
 }
 
 @end
@@ -689,14 +824,14 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
     if(s==0) return @"开启后方可在信息流页按标签过滤；长按信息流页「我的头像」可随时打开本面板。";
     if(s==2){
         if(self.tags.count==0) return @"未读取到好友标签。请先在「通讯录 → 标签」中创建标签并添加好友。";
-        return @"点标签行勾选筛选；点行右侧「成员」打开成员名单，点成员跳到他的个人朋友圈——主页时间线窗口之外的旧动态从那里看。";
+        return @"点标签行勾选筛选；点行右侧「成员」打开成员名单，点成员跳到他的个人朋友圈；「聚合」把该标签成员在本地已缓存的动态按时间排成一页。";
     }
     return nil;
 }
 
-// 行右侧配件：勾选标记 + 「成员 ›」按钮（accessoryView 会顶掉 accessoryType 的 ✓，故手动组合）
+// 行右侧配件：勾选标记 + 「成员 ›」+「聚合 ›」按钮（accessoryView 会顶掉 accessoryType 的 ✓，故手动组合）
 - (UIView *)accessoryForRow:(NSInteger)row selected:(BOOL)on {
-    UIView *box=[[UIView alloc] initWithFrame:CGRectMake(0,0,(on?24:0)+58,30)];
+    UIView *box=[[UIView alloc] initWithFrame:CGRectMake(0,0,(on?24:0)+116,30)];
     CGFloat x=0;
     if(on){
         UILabel *ck=[[UILabel alloc] initWithFrame:CGRectMake(0,3,20,24)];
@@ -711,7 +846,33 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
     btn.tag=row;
     [btn addTarget:self action:@selector(openMembers:) forControlEvents:UIControlEventTouchUpInside];
     [box addSubview:btn];
+    UIButton *agg=[UIButton buttonWithType:UIButtonTypeSystem];
+    agg.frame=CGRectMake(x+58,0,58,30);
+    agg.titleLabel.font=[UIFont systemFontOfSize:15];
+    [agg setTitle:@"聚合 ›" forState:UIControlStateNormal];
+    agg.tag=row;
+    [agg addTarget:self action:@selector(openAggregate:) forControlEvents:UIControlEventTouchUpInside];
+    [box addSubview:agg];
     return box;
+}
+
+- (void)openAggregate:(UIButton *)btn {
+    NSInteger row=btn.tag;
+    MTFManager *m=[MTFManager shared];
+    MTFAggregateViewController *vc=[MTFAggregateViewController new];
+    NSMutableArray *names=[NSMutableArray array];
+    if(row==0){
+        vc.title=@"聚合 · 未设置标签的朋友";
+        for(id c in [m untaggedContacts]){ NSString *u=MTFUsernameOfMember(c); if(u.length) [names addObject:u]; }
+    } else {
+        if(row-1>=(NSInteger)self.tags.count) return;
+        NSString *name=self.tags[row-1][@"name"];
+        vc.title=[@"聚合 · " stringByAppendingString:name];
+        for(id c in [m contactsForTagName:name]){ NSString *u=MTFUsernameOfMember(c); if(u.length) [names addObject:u]; }
+    }
+    vc.usernames=names;
+    if(self.navigationController) [self.navigationController pushViewController:vc animated:YES];
+    else [self presentViewController:[[UINavigationController alloc] initWithRootViewController:vc] animated:YES completion:nil];
 }
 
 - (void)openMembers:(UIButton *)btn {
@@ -830,7 +991,7 @@ static void MTFRebuildMapIfNeeded(WCFacade *self, unsigned long long origCount){
 static NSString *MTFBuildDiagnostics(void){
     MTFManager *m=[MTFManager shared];
     NSMutableString *r=[NSMutableString string];
-    [r appendString:@"MomentsTagFilter 诊断 (v1.4.2)\n"];
+    [r appendString:@"MomentsTagFilter 诊断 (v1.5.0)\n"];
     [r appendFormat:@"开关: %@  已选标签: %@  含未标签: %@\n",
         [m enabled]?@"开":@"关",
         [m selectedNames].count?[[m selectedNames] componentsJoinedByString:@", "]:@"(无)",
@@ -1003,7 +1164,7 @@ static void MTFRegisterIntoPluginsMgr(void){
     @try {
         WCPluginsMgr *mgr=[cls sharedInstance]; BOOL exists=NO;
         @try { for(id p in [mgr plugins]){ NSString *tt=nil; @try{ tt=[p valueForKey:@"title"]; }@catch(__unused id e){} if([tt isEqualToString:@"朋友圈标签筛选"]){ exists=YES; break; } } } @catch(__unused id e){}
-        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.4.2" controller:@"MTFSettingsViewController"];
+        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.5.0" controller:@"MTFSettingsViewController"];
     } @catch(__unused id e){}
 }
 
