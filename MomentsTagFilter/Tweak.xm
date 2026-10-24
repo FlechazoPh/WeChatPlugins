@@ -71,6 +71,12 @@
 - (NSArray *)fetchCachedDataItemsForUsername:(NSString *)username withMaxCount:(NSInteger)maxCount;
 @end
 
+// SNS 数据管理器（B2 CGI 直取：单例 + 按用户拉首页；8.0.78 二进制已核对选择器与类型编码）
+@interface SnsDBManager : NSObject
++ (instancetype)shareInstance;
+- (void)requestUserFirstPageAsync:(NSString *)username isTopList:(BOOL)isTop completion:(id)completion;
+@end
+
 @interface WCPluginsMgr : NSObject
 + (instancetype)sharedInstance;
 - (void)registerControllerWithTitle:(NSString *)title version:(NSString *)version controller:(NSString *)controller;
@@ -108,6 +114,28 @@ static NSString *MTFAuthorOfItem(id item) {
     }
     @try { id v = [item valueForKey:@"_username"]; if ([v isKindOfClass:[NSString class]]) return v; } @catch (__unused id e) {}
     return nil;
+}
+
+// 通用条目读取：WCDataItem 与 SnsObject（CGI 响应）字段名略有不同，逐个安全试读。
+static unsigned int MTFItemTime(id item) {
+    for(NSString *k in @[@"createtime", @"createTime"]){
+        @try { id v=[item valueForKey:k]; if([v isKindOfClass:[NSNumber class]]) return [v unsignedIntValue]; } @catch(__unused id e){}
+    }
+    return 0;
+}
+static NSString *MTFItemText(id item) {
+    for(NSString *k in @[@"contentDesc", @"contentdesc"]){
+        @try { id v=[item valueForKey:k]; if([v isKindOfClass:[NSString class]] && [(NSString*)v length]) return v; } @catch(__unused id e){}
+    }
+    return nil;
+}
+static NSString *MTFItemKey(id item) {
+    for(NSString *k in @[@"tid", @"sid", @"snsId", @"objectId"]){
+        @try { id v=[item valueForKey:k]; if([v isKindOfClass:[NSString class]] && [(NSString*)v length]) return v; } @catch(__unused id e){}
+    }
+    NSString *u=MTFAuthorOfItem(item);
+    unsigned int t=MTFItemTime(item);
+    return (u.length && t)?[NSString stringWithFormat:@"%@-%u", u, t]:nil;
 }
 
 // 当前匹配到的条数（实现见下方 hook 区）
@@ -317,6 +345,83 @@ static BOOL MTFIsFriend(id c){
     NSArray *items=nil;
     @try { items=[tm fetchCachedDataItemsForUsername:u withMaxCount:n]; } @catch(__unused id e){}
     return [items isKindOfClass:[NSArray class]]?items:@[];
+}
+
+// CGI 首页响应解析：可能是数组，也可能是带数组属性的响应对象；无法识别时返回空数组。
+- (NSArray *)parseFirstPageResult:(id)result {
+    if(!result) return @[];
+    if([result isKindOfClass:[NSArray class]]) return result;
+    for(NSString *key in @[@"objectList", @"snsObjectList", @"items", @"objectArray", @"feedList", @"datas"]){
+        id v=nil;
+        @try { v=[result valueForKey:key]; } @catch(__unused id e){}
+        if([v isKindOfClass:[NSArray class]] && ((NSArray *)v).count) return v;
+    }
+    return @[];
+}
+
+// CGI 直取某用户首页（SnsDBManager 单例的 requestUserFirstPageAsync；无回调 8 秒则超时放行，
+// 避免单个成员卡住整条链）。回调参数按一个对象接收（多余参数忽略），只做类型安全处理。
+- (void)requestFirstPageForUsername:(NSString *)u completion:(void(^)(NSArray *items))done {
+    __block BOOL finished=NO;
+    // 统一回主线程再结算，避免 CGI 回调与超时回调竞态导致 done 被调两次
+    void (^finish)(NSArray *) = ^(NSArray *items){
+        dispatch_async(dispatch_get_main_queue(),^{ if(finished) return; finished=YES; if(done) done(items); });
+    };
+    Class cls=objc_getClass("SnsDBManager");
+    id mgr=nil;
+    @try { if(cls && [cls respondsToSelector:@selector(shareInstance)]) mgr=[cls shareInstance]; } @catch(__unused id e){}
+    SEL sel=@selector(requestUserFirstPageAsync:isTopList:completion:);
+    if(!mgr || ![mgr respondsToSelector:sel]){ finish(@[]); return; }
+    @try {
+        ((void(*)(id,SEL,id,BOOL,id))objc_msgSend)(mgr, sel, u, NO, ^(id result){
+            finish([self parseFirstPageResult:result]);
+        });
+    } @catch(__unused id e){ finish(@[]); }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(8*NSEC_PER_SEC)),dispatch_get_main_queue(),^{ finish(@[]); });
+}
+
+// B2 聚合（CGI 直取）：逐成员串行拉首页（间隔 0.8 秒，相当于逐个打开个人页），
+// 每人结果与本地缓存合并、按时间倒序、去重、上限 500 条；onMemberDone 在主线程逐人回调进度。
+- (void)aggregateServerFirstPagesForUsernames:(NSArray<NSString *> *)names
+                                  onMemberDone:(void(^)(NSString *username, NSArray *currentItems))onMemberDone
+                                  completion:(void(^)(NSArray *allItems))done {
+    NSMutableArray *collected=[NSMutableArray array];
+    NSMutableSet *seen=[NSMutableSet set];
+    void (^addItems)(NSArray *) = ^(NSArray *items){
+        for(id item in items){
+            NSString *k=MTFItemKey(item);
+            if(k.length){ if([seen containsObject:k]) continue; [seen addObject:k]; }
+            [collected addObject:item];
+        }
+    };
+    void (^sortCollected)(void) = ^{
+        [collected sortUsingComparator:^NSComparisonResult(id a, id b){
+            unsigned int ta=MTFItemTime(a), tb=MTFItemTime(b);
+            if(ta!=tb) return ta>tb?NSOrderedAscending:NSOrderedDescending;
+            return NSOrderedSame;
+        }];
+        if(collected.count>500) [collected removeObjectsInRange:NSMakeRange(500,collected.count-500)];
+    };
+    __block NSUInteger idx=0;
+    __block void (^step)(void);
+    step = ^{
+        if(idx>=names.count){
+            sortCollected();
+            dispatch_async(dispatch_get_main_queue(),^{ if(done) done(collected); });
+            return;
+        }
+        NSString *u=names[idx++];
+        if(![u isKindOfClass:[NSString class]]||!u.length){ step(); return; }
+        [self requestFirstPageForUsername:u completion:^(NSArray *cgiItems){
+            // finish 已保证在主线程，collected 的读写都在主线程串行
+            if(cgiItems.count) addItems(cgiItems);
+            addItems([self cachedItemsForUsername:u maxCount:30]); // 缓存合并兜底
+            sortCollected();
+            if(onMemberDone) onMemberDone(u, [collected copy]);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.8*NSEC_PER_SEC)),dispatch_get_main_queue(),step);
+        }];
+    };
+    step();
 }
 
 // B2 聚合：多名成员的本地缓存动态合并，按时间倒序，去重（按 tid），上限 500 条。
@@ -671,9 +776,11 @@ static NSString *MTFDisplayNameOfContact(id c){
 
 @interface MTFAggregateViewController : UITableViewController
 @property (nonatomic, strong) NSArray<NSString *> *usernames;  // 成员用户名
-@property (nonatomic, strong) NSArray *items;                  // WCDataItem，按时间倒序
+@property (nonatomic, strong) NSArray *items;                  // 按时间倒序（WCDataItem 或 SnsObject）
 @property (nonatomic, strong) NSDictionary<NSString *, NSString *> *displayNames;
 @property (nonatomic, assign) BOOL loading;
+@property (nonatomic, strong) UILabel *progressLabel;
+@property (nonatomic, assign) NSUInteger doneCount;
 @end
 
 @implementation MTFAggregateViewController
@@ -683,17 +790,24 @@ static NSString *MTFDisplayNameOfContact(id c){
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.loading=YES;
-    UIActivityIndicatorView *ind=nil;
-    if (@available(iOS 13.0, *)) ind=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-    else ind=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
-    [ind startAnimating];
-    self.tableView.tableHeaderView=ind;
+    UILabel *prog=[[UILabel alloc] initWithFrame:CGRectMake(0,0,self.view.bounds.size.width,30)];
+    prog.textAlignment=NSTextAlignmentCenter;
+    prog.font=[UIFont systemFontOfSize:13];
+    prog.textColor=[UIColor grayColor];
+    prog.text=@"正在逐人拉取首页…";
+    self.tableView.tableHeaderView=prog;
+    self.progressLabel=prog;
     NSArray<NSString *> *names=self.usernames;
-    [[MTFManager shared] aggregateCachedItemsForUsernames:names maxPerUser:30 completion:^(NSArray *items){
-        self.items=items;
+    __weak typeof(self) weakSelf=self;
+    [[MTFManager shared] aggregateServerFirstPagesForUsernames:names onMemberDone:^(NSString *username, NSArray *currentItems){
+        __strong typeof(weakSelf) s=weakSelf; if(!s) return;
+        s.doneCount++;
+        s.items=currentItems;
+        s.progressLabel.text=[NSString stringWithFormat:@"已拉取 %lu/%lu 人 · 共 %lu 条", (unsigned long)s.doneCount, (unsigned long)names.count, (unsigned long)currentItems.count];
+        // 逐人刷新显示名（后台算，主线程刷新）
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT,0),^{
-            NSMutableDictionary *map=[NSMutableDictionary dictionary];
-            for(id item in items){
+            NSMutableDictionary *map=[s.displayNames mutableCopy]?:[NSMutableDictionary dictionary];
+            for(id item in currentItems){
                 NSString *u=MTFAuthorOfItem(item);
                 if(u.length && !map[u]){
                     id c=[[MTFManager shared] resolveContact:u];
@@ -702,20 +816,25 @@ static NSString *MTFDisplayNameOfContact(id c){
                 }
             }
             dispatch_async(dispatch_get_main_queue(),^{
-                self.displayNames=map;
-                self.loading=NO;
-                self.tableView.tableHeaderView=nil;
-                [self.tableView reloadData];
+                __strong typeof(weakSelf) s2=weakSelf; if(!s2) return;
+                s2.displayNames=map;
+                [s2.tableView reloadData];
             });
         });
+    } completion:^(NSArray *allItems){
+        __strong typeof(weakSelf) s=weakSelf; if(!s) return;
+        s.items=allItems;
+        s.loading=NO;
+        s.tableView.tableHeaderView=nil;
+        [s.tableView reloadData];
     }];
 }
 
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return (NSInteger)self.items.count; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
-    if(self.loading) return @"正在读取本地缓存…";
-    if(!self.items.count) return @"本地没有缓存到这些成员的动态。先打开成员的个人页看一次（会缓存），再回来看聚合就会有更早内容。";
-    return @"本地已缓存的动态（按时间倒序，每人最多 30 条）。点任意一条，打开该成员的个人页看全部。";
+    if(self.loading) return @"正在逐人拉取首页（串行、间隔 0.8 秒，相当于逐个打开个人页）…";
+    if(!self.items.count) return @"没有拉到动态。可能原因：该标签成员近期无动态，或首页接口未返回可解析的数据（可到设置页「排查」看诊断）。";
+    return @"CGI 直取每人首页 + 本地缓存合并，按时间倒序。点任意一条，打开该成员的个人页看全部（含更早页）。";
 }
 
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip {
@@ -724,12 +843,10 @@ static NSString *MTFDisplayNameOfContact(id c){
     NSString *u=MTFAuthorOfItem(item);
     NSString *disp=self.displayNames[u];
     c.textLabel.text=disp.length?disp:u;
-    NSString *txt=nil;
-    @try { id v=[item valueForKey:@"contentDesc"]; if([v isKindOfClass:[NSString class]]) txt=v; } @catch(__unused id e){}
+    NSString *txt=MTFItemText(item);
     if(!txt.length) txt=@"（图片/视频动态）";
     if(txt.length>80) txt=[[txt substringToIndex:80] stringByAppendingString:@"…"];
-    unsigned int tm=0;
-    @try { id v=[item valueForKey:@"createtime"]; if([v isKindOfClass:[NSNumber class]]) tm=[v unsignedIntValue]; } @catch(__unused id e){}
+    unsigned int tm=MTFItemTime(item);
     NSString *date=@"";
     if(tm){
         static NSDateFormatter *fmt=nil;
@@ -991,7 +1108,7 @@ static void MTFRebuildMapIfNeeded(WCFacade *self, unsigned long long origCount){
 static NSString *MTFBuildDiagnostics(void){
     MTFManager *m=[MTFManager shared];
     NSMutableString *r=[NSMutableString string];
-    [r appendString:@"MomentsTagFilter 诊断 (v1.5.0)\n"];
+    [r appendString:@"MomentsTagFilter 诊断 (v1.6.0)\n"];
     [r appendFormat:@"开关: %@  已选标签: %@  含未标签: %@\n",
         [m enabled]?@"开":@"关",
         [m selectedNames].count?[[m selectedNames] componentsJoinedByString:@", "]:@"(无)",
@@ -1164,7 +1281,7 @@ static void MTFRegisterIntoPluginsMgr(void){
     @try {
         WCPluginsMgr *mgr=[cls sharedInstance]; BOOL exists=NO;
         @try { for(id p in [mgr plugins]){ NSString *tt=nil; @try{ tt=[p valueForKey:@"title"]; }@catch(__unused id e){} if([tt isEqualToString:@"朋友圈标签筛选"]){ exists=YES; break; } } } @catch(__unused id e){}
-        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.5.0" controller:@"MTFSettingsViewController"];
+        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.6.0" controller:@"MTFSettingsViewController"];
     } @catch(__unused id e){}
 }
 
