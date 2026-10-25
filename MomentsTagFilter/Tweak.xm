@@ -662,7 +662,10 @@ static NSString *MTFDebugDescribe(id v, int depth){
             [r appendString:@"]"];
             return r;
         }
-        NSMutableString *r=[NSMutableString stringWithFormat:@"<%@>", NSStringFromClass([v class])];
+        NSString *cname=NSStringFromClass([v class]);
+        // v3：只深挖微信自家类（WC/MM 开头）与 Foundation 容器/字符串；相机、会话等其他对象只记类名，避免再碰闪退源
+        if(![cname hasPrefix:@"WC"] && ![cname hasPrefix:@"MM"]) return [NSString stringWithFormat:@"<%@>", cname];
+        NSMutableString *r=[NSMutableString stringWithFormat:@"<%@>", cname];
         unsigned int n=0;
         Ivar *ivars=class_copyIvarList([v class], &n);
         for(unsigned int i=0;i<n;i++){
@@ -671,7 +674,8 @@ static NSString *MTFDebugDescribe(id v, int depth){
             const char *nm=ivar_getName(ivars[i]);
             if(!nm) continue;
             id iv=object_getIvar(v, ivars[i]);
-            NSString *ds=MTFDebugDescribe(iv, 0);
+            NSString *ds=nil;
+            @try { ds=MTFDebugDescribe(iv, 0); } @catch(__unused id ex2){}
             if(ds) [r appendFormat:@" %s=%@", nm, ds];
             if(r.length>1500) break;
         }
@@ -684,6 +688,12 @@ static void MTFDebugRecordPage(UIViewController *vc){
         if(!gMTFPageLog) gMTFPageLog=[NSMutableArray array];
         NSString *cls=NSStringFromClass([vc class]);
         if([cls hasPrefix:@"UI"] || [cls hasPrefix:@"MTF"]) return;
+        // v3：只深挖赞赏页，其他页面只记类名（扫码页不再碰 ivar，v2 的闪退即由此而来）
+        if(![cls isEqualToString:@"WCPayQRCodeRewardPayerDetailViewController"]){
+            [gMTFPageLog addObject:[NSString stringWithFormat:@"[%@] %@\n", [NSDate date], cls]];
+            while(gMTFPageLog.count>40) [gMTFPageLog removeObjectAtIndex:0];
+            return;
+        }
         NSMutableString *e=[NSMutableString stringWithFormat:@"[%@] %@\n", [NSDate date], cls];
         for(Class c=[vc class]; c && c!=[UIViewController class]; c=class_getSuperclass(c)){
             unsigned int n=0;
@@ -694,7 +704,8 @@ static void MTFDebugRecordPage(UIViewController *vc){
                 const char *nm=ivar_getName(ivars[i]);
                 if(!nm) continue;
                 id v=object_getIvar(vc, ivars[i]);
-                NSString *ds=MTFDebugDescribe(v, 1);
+                NSString *ds=nil;
+                @try { ds=MTFDebugDescribe(v, 1); } @catch(__unused id ex2){}
                 if(ds) [e appendFormat:@"  %s = %@\n", nm, ds];
                 if(e.length>3000) break;
             }
@@ -706,8 +717,8 @@ static void MTFDebugRecordPage(UIViewController *vc){
     } @catch(__unused id ex){}
 }
 static NSString *MTFDebugPageLogText(void){
-    if(!gMTFPageLog.count) return @"暂无记录。先去打开一篇秋先生的猫的文章，再扫一次赞赏码，然后回到这里查看。";
-    return [@"页面记录（最近 40 条，时间正序；文章页那条里找 __biz=，赞赏页那条里找参数）：\n\n" stringByAppendingString:[gMTFPageLog componentsJoinedByString:@"\n"]];
+    if(!gMTFPageLog.count) return @"暂无记录。直接扫一次赞赏码，然后回到这里查看（v3 只深挖赞赏页）。";
+    return [@"页面记录 v3（仅赞赏页深挖，其他页面只记类名；找 WCPayQRCodeRewardPayerDetailViewController 那条）：\n\n" stringByAppendingString:[gMTFPageLog componentsJoinedByString:@"\n"]];
 }
 
 %hook UIViewController
