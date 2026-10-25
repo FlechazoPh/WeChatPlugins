@@ -1127,15 +1127,18 @@ static UIImage *MTFDotsImage(void){
         Class vcCls=objc_getClass("ContactTagNewDetailViewController");
         if(dataCls && vcCls){
             id data=[[dataCls alloc] init];
-            if([data respondsToSelector:@selector(setM_nsName:)]) [data setM_nsName:name];
+            // 这三个原生方法在 tweak 里没有接口声明，直接调用会在 CI 被当成编译错误，统一走显式 objc_msgSend
+            if([data respondsToSelector:@selector(setM_nsName:)])
+                ((void(*)(id,SEL,id))objc_msgSend)(data, @selector(setM_nsName:), name);
             id tid=tag[@"id"];
             if([data respondsToSelector:@selector(setM_uiID:)] && [tid respondsToSelector:@selector(unsignedIntValue)])
                 ((void(*)(id,SEL,unsigned int))objc_msgSend)(data, @selector(setM_uiID:), [tid unsignedIntValue]);
             NSArray *contacts=[m contactsForTagName:name];
             NSMutableArray *usernames=[NSMutableArray array];
             for(id c in contacts){ NSString *u=MTFUsernameOfMember(c); if(u.length) [usernames addObject:u]; }
-            if([data respondsToSelector:@selector(setM_arrContactNameList:)]) [data setM_arrContactNameList:usernames];
-            nativeVC=[[vcCls alloc] initViewControllerWithContactTagData:data];
+            if([data respondsToSelector:@selector(setM_arrContactNameList:)])
+                ((void(*)(id,SEL,id))objc_msgSend)(data, @selector(setM_arrContactNameList:), usernames);
+            nativeVC=((id(*)(id,SEL,id))objc_msgSend)([vcCls alloc], @selector(initViewControllerWithContactTagData:), data);
             // 标题兜底：原生页应自带「名 (人数)」；若数据驱动标题失效，这里先给一个
             if([nativeVC isKindOfClass:[UIViewController class]] && !((UIViewController *)nativeVC).title.length)
                 ((UIViewController *)nativeVC).title=[NSString stringWithFormat:@"%@ (%lu)", name, (unsigned long)usernames.count];
