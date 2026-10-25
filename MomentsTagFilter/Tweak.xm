@@ -971,9 +971,6 @@ static void MTFOpenOfficialAccount(UIViewController *from){
     [from presentViewController:a animated:YES completion:nil];
 }
 
-// v1.12.3 回退：直跳已禁用（handleUrl: 在真机抛 -[ScanWXCodeRewardUrlPrefixHandler getViewController] 未识别方法，@try 未兜住）
-// 原因待查（疑似该 handler 不能裸调，真实扫码入口另有上下文）；代码保留备查，不再调用。
-/*
 // 赞赏直跳：把扫码解出的串喂给微信自己的扫码结果处理（ScanWXCodeRewardUrlPrefixHandler handleUrl:），
 // 等于重放扫码，微信自己建逻辑、发 CGI、打开原生赞赏页。失败时 4 秒后回落二维码页。
 static NSString *const kMTFRewardScanUrl = @"m0aypbUN+BZmRIvC0(OToD"; // debug v4 实测：用户自己的赞赏码解出串
@@ -1021,8 +1018,6 @@ static void MTFOpenRewardDirect(UIViewController *from){
         } @catch(__unused id e){}
     });
 }
-
-*/
 
 @interface MTFChangelogViewController : UITableViewController
 @property (nonatomic, strong) NSArray<NSAttributedString *> *sections;
@@ -1084,7 +1079,7 @@ static void MTFOpenRewardDirect(UIViewController *from){
 
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [t deselectRowAtIndexPath:ip animated:YES];
-    if(ip.section==0) [self.navigationController pushViewController:[MTFRewardViewController new] animated:YES]; // v1.12.3：直跳回退，见下方注释
+    if(ip.section==0) MTFOpenRewardDirect(self);
 }
 
 @end
@@ -1747,6 +1742,31 @@ static void MTFRegisterIntoPluginsMgr(void){
 }
 %end
 
+// debug：给 ScanWXCodeRewardUrlPrefixHandler 补 getViewController（下游/钩子会向 handler 要当前 VC，原类没有此方法导致 1.12.2 闪退）
+static UIViewController *MTFTopViewController(void){
+    UIWindow *win=nil;
+    for(UIWindow *w in [UIApplication sharedApplication].windows){ if(w.isKeyWindow){ win=w; break; } }
+    UIViewController *top=win.rootViewController;
+    while(top){
+        UIViewController *next=nil;
+        if(top.presentedViewController) next=top.presentedViewController;
+        else if([top isKindOfClass:[UINavigationController class]]) next=[(UINavigationController*)top topViewController];
+        else if([top isKindOfClass:[UITabBarController class]]) next=[(UITabBarController*)top selectedViewController];
+        else break;
+        if(!next || next==top) break;
+        top=next;
+    }
+    return top;
+}
+static id MTFHandlerGetViewController(id self, SEL _cmd){
+    (void)self; (void)_cmd;
+    return MTFTopViewController();
+}
+
 %ctor {
+    { Class hcls=objc_getClass("ScanWXCodeRewardUrlPrefixHandler");
+      if(hcls && ![hcls instancesRespondToSelector:@selector(getViewController)]){
+          class_addMethod(hcls, @selector(getViewController), (IMP)MTFHandlerGetViewController, "@@:");
+      } }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(2*NSEC_PER_SEC)),dispatch_get_main_queue(),^{ MTFRegisterIntoPluginsMgr(); });
 }
