@@ -85,11 +85,16 @@
 #pragma mark - 常量
 
 // 版本号唯一来源（Tweak.xm 内三处共用；control 文件里的 Version 仍需手动同步）
-static NSString *const kMTFVersion        = @"1.8.3";
-static NSString *const kMTFChangelog = @"## v1.8.3（2026-10-25）\n\n- 更新日志改 markdown 渲染：之前是纯文本，`#`、反引号都原样显示；现在用 iOS 15 原生 markdown 解析渲染（标题加粗放大、列表圆点、代码等宽），老系统或解析失败时回退纯文本；页里不再放仓库的发版约定段落，只从版本小节开始\n\n## v1.8.2（2026-10-25）\n\n- 修排版错位：根因是末行分隔线用了 left=10000 的超大 inset 藏线，结果连带顶坏 cell 的布局边距，正文被推到屏外只剩尾字（总开关行、取消全选行、一级菜单两行全是末行，全中招）；现在末行不再特殊处理（分组表末行本来就不画分隔线），inset 另加 200 上限防御\n- 勾选改成 toggles：标签行的 ✓ 彻底拿掉，每行右侧换成苹果官方 UISwitch（与总开关同一组件），点行或拨开关都能切换\n\n## v1.8.1（2026-10-25）\n\n- 复刻系统 UI：v1.8.0 的 inset 分组在微信进程里丢了白卡（宿主改写了外观），现在每个 cell 自带白色圆角卡片背景（按首/末行切角），底部灰底、行间短分隔线与文字左对齐，不再依赖 tableView 自身的分组背景绘制\n- 版本行可点进：关于 → 版本点进去是更新日志页（内容与仓库 CHANGELOG.md 同步）\n- 长按门禁：朋友圈筛选总开关关闭后，朋友圈页长按头像不再进入功能；只有开启时才触发（要重新开启请走「我 → 插件」）\n- 勾选换成苹果官方图形：标签行的 ✓ 不再是字体字符，改成 SF Symbol checkmark（与系统 accessory 勾选同一个图形），蓝色随系统 tint\n\n## v1.8.0（2026-10-25）\n\n- 设置改成两级菜单：一级菜单是插件功能列表（目前只有「朋友圈筛选」一行，带蓝色标签图标和状态副文案「已开启 · 已选 N 个标签」/「已关闭」，点进去才是原来的开关 + 筛选列表二级菜单）；以后新增功能只在一级菜单加一行，结构不用再动\n- 全套换成 iOS 系统「设置」App 的原生样式：三级页面（功能列表、筛选页、成员名单）统一用 inset 分组列表（圆角卡片 + 灰底）、17pt 正文、灰色分组标题/脚注、蓝色操作行、标准 UISwitch 和系统勾选；图标是彩色圆角方块 + 白色 SF Symbol；不再引入任何第三方 UI 框架，UIKit 原生组件就是设置 App 自己用的那套\n- 入口统一进一级菜单：长按头像、我 → 插件都打开功能列表；顶部副标题是筛选快捷入口，直接落在筛选二级菜单，左上角返回可回一级菜单\n- 版本号改成代码内唯一常量，以后发版只改一处 + control 文件\n\n## v1.7.5（2026-10-25）\n\n- 底部浮标移到顶部：不再是底部黑色药丸，改成导航栏「朋友圈」标题正下方的 11pt 灰色副标题（🏷 标签 · 匹配 N 条），不遮挡内容；点副标题同样打开设置面板；离开信息流页（进好友个人页/设置页）时自动摘掉，返回时重新挂上（导航栏是各页面共用的，不摘会残留）\n- 多选后缀必显：之前多选时浮标只显前两个名字、「等共 N 个标签」时有时无；现在单标签显名字，多标签固定格式「首个 等共 N 个标签 · 匹配 N 条」，文案足够短、不会被截断，选 5 个就一定能看到「等共 5 个标签」\n\n## v1.7.4（2026-10-25）\n\n- 从好友个人页返回朋友圈不再自动转圈：删掉了信息流页每次出现都触发补拉的逻辑（之前只靠 3 秒冷却挡，返回稍久一点就重新转圈）；补拉只在筛选设置变更关闭时触发，下滑/上拉刷新走宿主自身分页\n- 多标签浮标显示优化：之前名字全拼在一起、浮标被撑出屏幕后两侧裁掉，看着只剩一个标签；现在名字总长 ≤18 字全显，更长时显前两个 +「等共 N 个标签」，且浮标宽度封顶屏宽-32、超了尾部截断\n\n## v1.7.3（2026-10-25）\n\n- 放慢补拉，看窗口能延多远：补拉检查间隔 1.5 秒 → 3 秒（降请求频率），单次上限 40 页 → 150 页，目标匹配 10 条 → 50 条；仍以服务器 noMore 为准，补拉时间会变长（约 32 页需 1 分半左右）\n- 其余与 v1.7.2 相同（无 CGI 拉取）\n\n## v1.7.2（2026-10-25）\n\n- 回滚：取消 CGI 拉取，代码还原到 v1.4.2（最后一个经真机验证不闪退的版本）。v1.6.0/v1.7.0/v1.7.1 的 CGI 拉取在真机上连续闪退，堆拷贝也没修好，不再继续猜\n- 恢复的功能：设置页全屏、成员名单（点成员跳原生个人页）、主页筛选投影 + 筛选状态浮标；筛选仍只覆盖主页时间线窗口内的动态，旧动态请点成员进个人页看\n\n## v1.7.1（2026-10-25）\n\n- 修勾选标签闪退：CGI 完成回调改显式堆拷贝再传给原生桥。v1.6.0/v1.7.0 两次闪退的共同点就是这条 CGI 调用，首要嫌疑是栈 block 以 id 形式经 objc_msgSend 传过去、桥接层若只存指针不拷贝，方法返回后回调即访野指针\n\n## v1.7.0（2026-10-25）\n\n- 去掉「聚合」按钮和聚合页：点聚合闪退，入口已删除\n- 改为筛选拉取：设置页勾选某个标签时，自动用 CGI 逐人拉取该组成员的个人页首页（串行、间隔 0.8 秒），按时间排成「筛选 · 标签名」一页；点行打开该成员个人页看全部。取消勾选时只关筛选、不拉取\n- 修 v1.6.0 的两个隐患：串行链改堆拷贝强自指（弱自指会让链在第一人后断掉）；联系人显示名解析全部回主线程（后台队列调联系人服务疑似闪退源之一）\n\n## v1.6.0（2026-10-24）\n\n- 聚合改为 CGI 直取：逐成员调用微信自己的首页接口（SnsDBManager 的 requestUserFirstPageAsync），串行、间隔 0.8 秒——相当于逐个打开个人页，不再只依赖本地缓存；结果与本地缓存合并、按时间倒序\n- 聚合页加逐人进度（已拉取 x/y 人 · 共 n 条），单个成员 8 秒无响应自动跳过，不卡住整页\n- 仍只拉每人首页；更早页的翻页后续再做\n\n## v1.5.0（2026-10-24）\n\n- 新增 B2 聚合动态：设置页每个标签行加「聚合 ›」按钮，把该标签成员在本地已缓存的朋友圈按时间倒序排成一页（每人最多 30 条、总共最多 500 条），点任意一条打开该成员的个人页\n- 聚合只读本地缓存、不发新网络请求：已打开过个人页的成员会显示更早内容；还没缓存的旧动态，点成员名打开个人页看一次后，下次聚合里就会出现\n\n## v1.4.2（2026-10-24）\n\n- 设置面板改为全屏呈现，修复半屏弹窗顶部遮挡、成员名单滚动时被标题栏压住的问题\n- 成员名单只显示名字，去掉 wxid 副标题\n- 信息流页新增筛选状态浮标：筛选生效时在页面底部显示已选标签与当前匹配条数，点浮标打开设置——筛选有没有生效一目了然\n\n## v1.4.1（2026-10-23）\n\n- 修复成员名单显示 wxid 的问题：标签成员先经通讯录管理器解析成完整好友对象再展示，名单显示备注名/昵称（与通讯录标签页一致）\n- 修复点成员闪退：跳转个人朋友圈前改用解析后的完整好友对象，解析不到时改为弹提示、不再闪退\n- 诊断信息增加成员元素类型探针，便于确认成员数据的真实结构\n\n## v1.4.0（2026-10-23）\n\n- 新增「成员直达」：设置页每个标签（含「未设置标签的朋友」）行右侧加「成员 ›」按钮，打开成员名单（按名字排序），点任意成员直接跳微信原生个人朋友圈页——主页时间线约 4 天窗口之外的旧动态也能看了\n- 附诊断结论：筛选与匹配逻辑经真机数据验证正确（成员交集与投影条数一致）；个别标签刷不出是其成员在主页时间线窗口内没有新动态，并非插件故障\n\n## v1.3.3（2026-10-23）\n\n- 排查版：设置页底部新增「生成诊断信息」，可一键生成并复制排查报告（标签成员数与样本、成员集合缓存对比、已扫描条数与时间跨度、作者交集），用于定位个别标签筛不出数据的问题\n- 修复潜在冷启动竞态：标签服务未就绪时算出的空集合不再被缓存钉死，下次判定会自动重算\n\n## v1.3.2（2026-10-23）\n\n- 修复筛选后经常刷不出数据：自动补拉改为「进度驱动」——以底层实际拉到的数据量判断每页是否生效，成功页上限提高到 40 页；请求被微信合并/未生效时自动重试，不再固定拉 10 次就停\n- 加载提示实时显示进度「已扫描 X 条 · 匹配 Y 条」，可区分是还在拉取还是确实没有数据\n- 说明：朋友圈主页时间线本身有深度上限（由微信服务端决定），太久远的动态只能在好友个人主页看到，超出部分插件无法拉取\n\n## v1.3.1（2026-10-23）\n\n- 修复「未设置标签的朋友」人数严重偏大：改为直接基于通讯录好友（isMyContact）减去已打标签的人，不再全量扫描误计入非好友\n- 筛选命中改回「标签→成员」集合（人数已验证准确）并惰性计算，修复部分标签筛不出 / 冷启动空白\n- 筛选后显示「正在加载」转圈，并自动受控补拉更多页，尽量把所选标签好友的近期朋友圈拉出来\n- 安装包文件名精简为 `momentsfil_<版本>_<布局>.deb`\n\n## v1.3.0（2026-10-23）\n\n- 标签匹配改为按联系人标签逐一匹配，修复部分标签筛不出、冷启动空白的问题\n- 标签列表内嵌显示人数\n- 导航栏改为不透明样式\n- 修复「未设置标签的朋友」人数统计\n- 补声明 getLabelsNameForContact: 接口\n\n## v1.1.1（2026-10-23）\n\n- 首个开源版本：朋友圈按好友标签分类筛选\n- 设置入口注册到「第三方插件管理」：启用开关 + 好友标签多选\n- 朋友圈页筛选入口（启用后显示）\n- 过滤采用非破坏性投影：只保留作者属于所选标签成员的条目，不改动宿主渲染流程";
+static NSString *const kMTFVersion        = @"1.9.0";
+static NSString *const kMTFChangelog = @"## v1.9.0（2026-10-25）\n\n- 不看某些标签：筛选页总开关下方加「只看这些 / 不看这些」切换；切到「不看这些」后，勾选的标签里的好友动态从信息流里去掉，其余人全部保留；「未设置标签的朋友」行在不看档同样可排除；两档勾选分开存，切档不丢另一档的选择；顶部副标题和一级菜单状态文案同步改成「🚫 不看 N 个标签 · 剩 M 条」；无勾选时不做任何过滤\n- 更新日志排版重写：v1.8.3 的 iOS 原生 markdown 解析在真机上整篇压成一段（换行、标题、列表全丢），改行级确定性渲染：版本标题 20pt 粗体 + 段间距、条目圆点 + 悬挂缩进、代码等宽、正文 16pt，换行显式拼进字符串，不再依赖解析器\n\n## v1.8.3（2026-10-25）\n\n- 更新日志改 markdown 渲染：之前是纯文本，`#`、反引号都原样显示；现在用 iOS 15 原生 markdown 解析渲染（标题加粗放大、列表圆点、代码等宽），老系统或解析失败时回退纯文本；页里不再放仓库的发版约定段落，只从版本小节开始\n\n## v1.8.2（2026-10-25）\n\n- 修排版错位：根因是末行分隔线用了 left=10000 的超大 inset 藏线，结果连带顶坏 cell 的布局边距，正文被推到屏外只剩尾字（总开关行、取消全选行、一级菜单两行全是末行，全中招）；现在末行不再特殊处理（分组表末行本来就不画分隔线），inset 另加 200 上限防御\n- 勾选改成 toggles：标签行的 ✓ 彻底拿掉，每行右侧换成苹果官方 UISwitch（与总开关同一组件），点行或拨开关都能切换\n\n## v1.8.1（2026-10-25）\n\n- 复刻系统 UI：v1.8.0 的 inset 分组在微信进程里丢了白卡（宿主改写了外观），现在每个 cell 自带白色圆角卡片背景（按首/末行切角），底部灰底、行间短分隔线与文字左对齐，不再依赖 tableView 自身的分组背景绘制\n- 版本行可点进：关于 → 版本点进去是更新日志页（内容与仓库 CHANGELOG.md 同步）\n- 长按门禁：朋友圈筛选总开关关闭后，朋友圈页长按头像不再进入功能；只有开启时才触发（要重新开启请走「我 → 插件」）\n- 勾选换成苹果官方图形：标签行的 ✓ 不再是字体字符，改成 SF Symbol checkmark（与系统 accessory 勾选同一个图形），蓝色随系统 tint\n\n## v1.8.0（2026-10-25）\n\n- 设置改成两级菜单：一级菜单是插件功能列表（目前只有「朋友圈筛选」一行，带蓝色标签图标和状态副文案「已开启 · 已选 N 个标签」/「已关闭」，点进去才是原来的开关 + 筛选列表二级菜单）；以后新增功能只在一级菜单加一行，结构不用再动\n- 全套换成 iOS 系统「设置」App 的原生样式：三级页面（功能列表、筛选页、成员名单）统一用 inset 分组列表（圆角卡片 + 灰底）、17pt 正文、灰色分组标题/脚注、蓝色操作行、标准 UISwitch 和系统勾选；图标是彩色圆角方块 + 白色 SF Symbol；不再引入任何第三方 UI 框架，UIKit 原生组件就是设置 App 自己用的那套\n- 入口统一进一级菜单：长按头像、我 → 插件都打开功能列表；顶部副标题是筛选快捷入口，直接落在筛选二级菜单，左上角返回可回一级菜单\n- 版本号改成代码内唯一常量，以后发版只改一处 + control 文件\n\n## v1.7.5（2026-10-25）\n\n- 底部浮标移到顶部：不再是底部黑色药丸，改成导航栏「朋友圈」标题正下方的 11pt 灰色副标题（🏷 标签 · 匹配 N 条），不遮挡内容；点副标题同样打开设置面板；离开信息流页（进好友个人页/设置页）时自动摘掉，返回时重新挂上（导航栏是各页面共用的，不摘会残留）\n- 多选后缀必显：之前多选时浮标只显前两个名字、「等共 N 个标签」时有时无；现在单标签显名字，多标签固定格式「首个 等共 N 个标签 · 匹配 N 条」，文案足够短、不会被截断，选 5 个就一定能看到「等共 5 个标签」\n\n## v1.7.4（2026-10-25）\n\n- 从好友个人页返回朋友圈不再自动转圈：删掉了信息流页每次出现都触发补拉的逻辑（之前只靠 3 秒冷却挡，返回稍久一点就重新转圈）；补拉只在筛选设置变更关闭时触发，下滑/上拉刷新走宿主自身分页\n- 多标签浮标显示优化：之前名字全拼在一起、浮标被撑出屏幕后两侧裁掉，看着只剩一个标签；现在名字总长 ≤18 字全显，更长时显前两个 +「等共 N 个标签」，且浮标宽度封顶屏宽-32、超了尾部截断\n\n## v1.7.3（2026-10-25）\n\n- 放慢补拉，看窗口能延多远：补拉检查间隔 1.5 秒 → 3 秒（降请求频率），单次上限 40 页 → 150 页，目标匹配 10 条 → 50 条；仍以服务器 noMore 为准，补拉时间会变长（约 32 页需 1 分半左右）\n- 其余与 v1.7.2 相同（无 CGI 拉取）\n\n## v1.7.2（2026-10-25）\n\n- 回滚：取消 CGI 拉取，代码还原到 v1.4.2（最后一个经真机验证不闪退的版本）。v1.6.0/v1.7.0/v1.7.1 的 CGI 拉取在真机上连续闪退，堆拷贝也没修好，不再继续猜\n- 恢复的功能：设置页全屏、成员名单（点成员跳原生个人页）、主页筛选投影 + 筛选状态浮标；筛选仍只覆盖主页时间线窗口内的动态，旧动态请点成员进个人页看\n\n## v1.7.1（2026-10-25）\n\n- 修勾选标签闪退：CGI 完成回调改显式堆拷贝再传给原生桥。v1.6.0/v1.7.0 两次闪退的共同点就是这条 CGI 调用，首要嫌疑是栈 block 以 id 形式经 objc_msgSend 传过去、桥接层若只存指针不拷贝，方法返回后回调即访野指针\n\n## v1.7.0（2026-10-25）\n\n- 去掉「聚合」按钮和聚合页：点聚合闪退，入口已删除\n- 改为筛选拉取：设置页勾选某个标签时，自动用 CGI 逐人拉取该组成员的个人页首页（串行、间隔 0.8 秒），按时间排成「筛选 · 标签名」一页；点行打开该成员个人页看全部。取消勾选时只关筛选、不拉取\n- 修 v1.6.0 的两个隐患：串行链改堆拷贝强自指（弱自指会让链在第一人后断掉）；联系人显示名解析全部回主线程（后台队列调联系人服务疑似闪退源之一）\n\n## v1.6.0（2026-10-24）\n\n- 聚合改为 CGI 直取：逐成员调用微信自己的首页接口（SnsDBManager 的 requestUserFirstPageAsync），串行、间隔 0.8 秒——相当于逐个打开个人页，不再只依赖本地缓存；结果与本地缓存合并、按时间倒序\n- 聚合页加逐人进度（已拉取 x/y 人 · 共 n 条），单个成员 8 秒无响应自动跳过，不卡住整页\n- 仍只拉每人首页；更早页的翻页后续再做\n\n## v1.5.0（2026-10-24）\n\n- 新增 B2 聚合动态：设置页每个标签行加「聚合 ›」按钮，把该标签成员在本地已缓存的朋友圈按时间倒序排成一页（每人最多 30 条、总共最多 500 条），点任意一条打开该成员的个人页\n- 聚合只读本地缓存、不发新网络请求：已打开过个人页的成员会显示更早内容；还没缓存的旧动态，点成员名打开个人页看一次后，下次聚合里就会出现\n\n## v1.4.2（2026-10-24）\n\n- 设置面板改为全屏呈现，修复半屏弹窗顶部遮挡、成员名单滚动时被标题栏压住的问题\n- 成员名单只显示名字，去掉 wxid 副标题\n- 信息流页新增筛选状态浮标：筛选生效时在页面底部显示已选标签与当前匹配条数，点浮标打开设置——筛选有没有生效一目了然\n\n## v1.4.1（2026-10-23）\n\n- 修复成员名单显示 wxid 的问题：标签成员先经通讯录管理器解析成完整好友对象再展示，名单显示备注名/昵称（与通讯录标签页一致）\n- 修复点成员闪退：跳转个人朋友圈前改用解析后的完整好友对象，解析不到时改为弹提示、不再闪退\n- 诊断信息增加成员元素类型探针，便于确认成员数据的真实结构\n\n## v1.4.0（2026-10-23）\n\n- 新增「成员直达」：设置页每个标签（含「未设置标签的朋友」）行右侧加「成员 ›」按钮，打开成员名单（按名字排序），点任意成员直接跳微信原生个人朋友圈页——主页时间线约 4 天窗口之外的旧动态也能看了\n- 附诊断结论：筛选与匹配逻辑经真机数据验证正确（成员交集与投影条数一致）；个别标签刷不出是其成员在主页时间线窗口内没有新动态，并非插件故障\n\n## v1.3.3（2026-10-23）\n\n- 排查版：设置页底部新增「生成诊断信息」，可一键生成并复制排查报告（标签成员数与样本、成员集合缓存对比、已扫描条数与时间跨度、作者交集），用于定位个别标签筛不出数据的问题\n- 修复潜在冷启动竞态：标签服务未就绪时算出的空集合不再被缓存钉死，下次判定会自动重算\n\n## v1.3.2（2026-10-23）\n\n- 修复筛选后经常刷不出数据：自动补拉改为「进度驱动」——以底层实际拉到的数据量判断每页是否生效，成功页上限提高到 40 页；请求被微信合并/未生效时自动重试，不再固定拉 10 次就停\n- 加载提示实时显示进度「已扫描 X 条 · 匹配 Y 条」，可区分是还在拉取还是确实没有数据\n- 说明：朋友圈主页时间线本身有深度上限（由微信服务端决定），太久远的动态只能在好友个人主页看到，超出部分插件无法拉取\n\n## v1.3.1（2026-10-23）\n\n- 修复「未设置标签的朋友」人数严重偏大：改为直接基于通讯录好友（isMyContact）减去已打标签的人，不再全量扫描误计入非好友\n- 筛选命中改回「标签→成员」集合（人数已验证准确）并惰性计算，修复部分标签筛不出 / 冷启动空白\n- 筛选后显示「正在加载」转圈，并自动受控补拉更多页，尽量把所选标签好友的近期朋友圈拉出来\n- 安装包文件名精简为 `momentsfil_<版本>_<布局>.deb`\n\n## v1.3.0（2026-10-23）\n\n- 标签匹配改为按联系人标签逐一匹配，修复部分标签筛不出、冷启动空白的问题\n- 标签列表内嵌显示人数\n- 导航栏改为不透明样式\n- 修复「未设置标签的朋友」人数统计\n- 补声明 getLabelsNameForContact: 接口\n\n## v1.1.1（2026-10-23）\n\n- 首个开源版本：朋友圈按好友标签分类筛选\n- 设置入口注册到「第三方插件管理」：启用开关 + 好友标签多选\n- 朋友圈页筛选入口（启用后显示）\n- 过滤采用非破坏性投影：只保留作者属于所选标签成员的条目，不改动宿主渲染流程";
 static NSString *const kMTFEnabled        = @"MTFEnabled";
 static NSString *const kMTFSelectedNames  = @"MTFSelectedTagNames";
 static NSString *const kMTFIncludeUntagged= @"MTFIncludeUntagged";
+// 筛选方式：0=只看选中标签（原逻辑），1=不看选中标签（排除）。两档各自独立存选择，
+// 切档不丢另一档的勾选；谓词取反只改判定，投影/补拉/浮标 machinery 全部复用。
+static NSString *const kMTFFilterMode     = @"MTFFilterMode";
+static NSString *const kMTFExcludedNames  = @"MTFExcludedTagNames";
+static NSString *const kMTFExcludeUntagged= @"MTFExcludeUntagged";
 static NSString *const kMTFNoTagKey       = @"__MTF_NOTAG__";
 
 static const NSUInteger kMTFTargetMatch   = 50;   // 目标：补拉到至少这么多条匹配项（放宽，让窗口尽量往深处走）
@@ -125,6 +130,7 @@ static void MTFPresentFilterSettings(UIViewController *host);
 
 @interface MTFManager : NSObject
 @property (nonatomic, strong) NSSet<NSString *> *allowedUsernames;  // 选中标签的成员并集（惰性算）
+@property (nonatomic, strong) NSSet<NSString *> *blockedUsernames;  // 排除标签的成员并集（不看模式，惰性算）
 @property (nonatomic, strong) NSSet<NSString *> *taggedUnion;       // 所有已打标签的用户名
 @property (nonatomic, assign) NSUInteger dataGen;                   // allowed/tagged 的计算代际
 @property (nonatomic, strong) NSSet<NSString *> *untaggedFriends;   // 无标签的好友（异步算，仅用于显示人数）
@@ -171,6 +177,23 @@ static void MTFPresentFilterSettings(UIViewController *host);
 - (BOOL)includeUntagged { return [[NSUserDefaults standardUserDefaults] boolForKey:kMTFIncludeUntagged]; }
 - (void)setIncludeUntagged:(BOOL)on { [[NSUserDefaults standardUserDefaults] setBool:on forKey:kMTFIncludeUntagged]; [[NSUserDefaults standardUserDefaults] synchronize]; }
 
+// 筛选方式与不看模式的选择（与只看模式分开存，切档不互毁）
+- (NSInteger)filterMode { return [[NSUserDefaults standardUserDefaults] integerForKey:kMTFFilterMode]; }
+- (void)setFilterMode:(NSInteger)mode { [[NSUserDefaults standardUserDefaults] setInteger:mode forKey:kMTFFilterMode]; [[NSUserDefaults standardUserDefaults] synchronize]; }
+- (NSArray<NSString *> *)excludedNames {
+    NSArray *a=[[NSUserDefaults standardUserDefaults] arrayForKey:kMTFExcludedNames];
+    return [a isKindOfClass:[NSArray class]]?a:@[];
+}
+- (BOOL)excludeUntagged { return [[NSUserDefaults standardUserDefaults] boolForKey:kMTFExcludeUntagged]; }
+- (void)setExcludeUntagged:(BOOL)on { [[NSUserDefaults standardUserDefaults] setBool:on forKey:kMTFExcludeUntagged]; [[NSUserDefaults standardUserDefaults] synchronize]; }
+// 当前档位的「未标签」勾选 / 标签勾选 / 批量操作入口（UI 只调这些，不用分档写两套）
+- (BOOL)untaggedSelected { return [self filterMode]==1 ? [self excludeUntagged] : [self includeUntagged]; }
+- (void)setUntagged:(BOOL)on { if([self filterMode]==1) [self setExcludeUntagged:on]; else [self setIncludeUntagged:on]; }
+- (BOOL)isTagSelected:(NSString *)name {
+    if([self filterMode]==1) return [[self excludedNames] containsObject:name];
+    return [[self selectedNames] containsObject:name];
+}
+
 // 有序标签列表：@[ @{@"id":..,@"name":..} ]，顺序与系统「通讯录标签」一致
 - (NSArray<NSDictionary *> *)orderedTags {
     ContactTagMgr *mgr=[self tagMgr];
@@ -215,24 +238,41 @@ static void MTFPresentFilterSettings(UIViewController *host);
     return [a isKindOfClass:[NSArray class]]?a:@[];
 }
 - (void)setName:(NSString *)name selected:(BOOL)sel {
-    NSMutableArray *a=[[self selectedNames] mutableCopy]; [a removeObject:name]; if(sel)[a addObject:name];
-    [[NSUserDefaults standardUserDefaults] setObject:a forKey:kMTFSelectedNames];
+    // 按当前档位写：只看档改 selectedNames，不看档改 excludedNames
+    NSString *key = [self filterMode]==1 ? kMTFExcludedNames : kMTFSelectedNames;
+    NSArray *cur = [self filterMode]==1 ? [self excludedNames] : [self selectedNames];
+    NSMutableArray *a=[cur mutableCopy]; [a removeObject:name]; if(sel)[a addObject:name];
+    [[NSUserDefaults standardUserDefaults] setObject:a forKey:key];
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 - (void)selectAll {
     NSMutableArray *a=[NSMutableArray array];
     for(NSDictionary *t in [self orderedTags]) [a addObject:t[@"name"]];
-    [[NSUserDefaults standardUserDefaults] setObject:a forKey:kMTFSelectedNames];
-    [self setIncludeUntagged:YES];
+    if([self filterMode]==1){
+        [[NSUserDefaults standardUserDefaults] setObject:a forKey:kMTFExcludedNames];
+        [self setExcludeUntagged:YES];
+    } else {
+        [[NSUserDefaults standardUserDefaults] setObject:a forKey:kMTFSelectedNames];
+        [self setIncludeUntagged:YES];
+    }
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 - (void)clearAll {
-    [[NSUserDefaults standardUserDefaults] removeObjectForKey:kMTFSelectedNames];
-    [self setIncludeUntagged:NO];
+    if([self filterMode]==1){
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:kMTFExcludedNames];
+        [self setExcludeUntagged:NO];
+    } else {
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:kMTFSelectedNames];
+        [self setIncludeUntagged:NO];
+    }
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
-- (BOOL)isActive { return [self enabled] && ([self selectedNames].count>0 || [self includeUntagged]); }
+- (BOOL)isActive {
+    if(![self enabled]) return NO;
+    if([self filterMode]==1) return [self excludedNames].count>0 || [self excludeUntagged];
+    return [self selectedNames].count>0 || [self includeUntagged];
+}
 
 static NSString *MTFUsernameOfMember(id c){
     if([c isKindOfClass:[NSString class]]) return c;
@@ -249,14 +289,14 @@ static BOOL MTFIsFriend(id c){
     return NO;
 }
 
-// 不走缓存地现算一遍「选中标签成员并集」。标签服务未就绪（取不到数组）时返回 nil，
+// 不走缓存地现算一遍「给定标签名列表的成员并集」。标签服务未就绪（取不到数组）时返回 nil，
 // 调用方不要把这种结果钉进缓存——那正是冷启动时把空集缓存死、筛选全空的竞态。
-- (NSSet *)freshAllowedSet {
+- (NSSet *)freshSetForNames:(NSArray<NSString *> *)names {
     ContactTagMgr *mgr=[self tagMgr];
     if(!mgr) return nil;
     NSMutableSet *allowed=[NSMutableSet set];
     BOOL ok=YES;
-    for(NSString *name in [self selectedNames]){
+    for(NSString *name in names){
         NSArray *cs=nil;
         @try{ cs=[mgr getContactsForTagName:name]; }@catch(__unused id e){ cs=nil; }
         if(![cs isKindOfClass:[NSArray class]]){ ok=NO; continue; }
@@ -264,18 +304,23 @@ static BOOL MTFIsFriend(id c){
     }
     return ok ? allowed : nil;
 }
+- (NSSet *)freshAllowedSet { return [self freshSetForNames:[self selectedNames]]; }
+- (NSSet *)freshBlockedSet { return [self freshSetForNames:[self excludedNames]]; }
 
-// 惰性计算：选中标签成员并集 + 全部已打标签用户名。按代际缓存，修复冷启动空白。
+// 惰性计算：当前档位的成员集合（只看档=选中并集，不看档=排除并集）+ 全部已打标签用户名。
+// 按代际缓存，修复冷启动空白。切档会 bump 代际（applyFilterChanged），所以这里按档取数不会串。
 - (void)ensureSets {
-    if(self.dataGen==self.generation && self.allowedUsernames) return;
-    NSSet *allowed=[self freshAllowedSet];
-    if(!allowed) return;   // 服务未就绪：不写缓存，下次判定再算
+    NSSet *cur = [self filterMode]==1 ? self.blockedUsernames : self.allowedUsernames;
+    if(self.dataGen==self.generation && cur) return;
+    NSSet *set = [self filterMode]==1 ? [self freshBlockedSet] : [self freshAllowedSet];
+    if(!set) return;   // 服务未就绪：不写缓存，下次判定再算
     ContactTagMgr *mgr=[self tagMgr];
     NSMutableSet *tagged=[NSMutableSet set];
     @try { NSDictionary *d=[mgr getDicWithUserNameForAllTag];
         if([d isKindOfClass:[NSDictionary class]]) for(id k in d) if([k isKindOfClass:[NSString class]]) [tagged addObject:k];
     } @catch(__unused id e){}
-    self.allowedUsernames=allowed; self.taggedUnion=tagged;
+    if([self filterMode]==1) self.blockedUsernames=set; else self.allowedUsernames=set;
+    self.taggedUnion=tagged;
     self.dataGen=self.generation;
     self.decisionCache=[NSMutableDictionary dictionary]; self.decisionGen=self.generation;
 }
@@ -358,11 +403,26 @@ static BOOL MTFIsFriend(id c){
     return res;
 }
 
-// 命中判定：选中标签成员用「标签→成员」(人数已验证正确)；未设置标签用「好友且不在已打标签集合」
+// 命中判定：只看档=保留选中标签成员（+可选未标签好友）；不看档=去掉排除标签成员
+// （+可选未标签好友），其余全部保留。同一投影 machinery，谓词取反而已。
+// 不看档在集合未就绪（服务未起）时 fail-open：一律保留，绝不因数据没到就把所有人藏起来。
 - (BOOL)isUsernameAllowed:(NSString *)u {
     if(![self isActive]) return YES;
     if(![u isKindOfClass:[NSString class]] || !u.length) return NO; // 广告/无作者：隐藏
     [self ensureSets];
+    if([self filterMode]==1){
+        if(self.dataGen!=self.generation) return YES;               // 集合没算出来：先全放行
+        if([self.blockedUsernames containsObject:u]) return NO;     // 在排除名单里：去掉
+        if([self excludeUntagged]){
+            if([self.taggedUnion containsObject:u]) return YES;     // 有标签且未被排除：保留
+            NSNumber *cached=self.decisionCache[u]; if(cached) return !cached.boolValue;
+            BOOL isFriend=NO;
+            @try { id c=[[self contactMgr] getContactByName:u]; isFriend=MTFIsFriend(c); } @catch(__unused id e){}
+            self.decisionCache[u]=@(isFriend);
+            return !isFriend;                                       // 无标签好友：去掉；非好友：保留
+        }
+        return YES;
+    }
     if([self.allowedUsernames containsObject:u]) return YES;
     if([self includeUntagged]){
         if([self.taggedUnion containsObject:u]) return NO;          // 有标签但未选中
@@ -419,8 +479,9 @@ static BOOL MTFIsFriend(id c){
 // 且文案足够短、不会被截断——多选状态一眼可见，不再出现“只显两个、后缀时有时无”。
 - (void)refreshFilterBadge {
     if(![self isActive]){ [self removeFilterBadge]; return; }
-    NSMutableArray *parts=[NSMutableArray arrayWithArray:[self selectedNames]];
-    if([self includeUntagged]) [parts addObject:@"未标签"];
+    BOOL exclude=[self filterMode]==1;
+    NSMutableArray *parts=[NSMutableArray arrayWithArray:exclude?[self excludedNames]:[self selectedNames]];
+    if([self untaggedSelected]) [parts addObject:@"未标签"];
     NSString *label;
     if(parts.count<=1){
         NSString *n=parts.count?parts[0]:@"";
@@ -431,7 +492,9 @@ static BOOL MTFIsFriend(id c){
         if(first.length>12) first=[[first substringToIndex:12] stringByAppendingString:@"…"];
         label=[NSString stringWithFormat:@"%@ 等共 %lu 个标签", first, (unsigned long)parts.count];
     }
-    NSString *txt=[NSString stringWithFormat:@"🏷 %@ · 匹配 %lu 条", label,(unsigned long)gMapCount()];
+    NSString *txt=exclude
+        ? [NSString stringWithFormat:@"🚫 不看 %@ · 剩 %lu 条", label,(unsigned long)gMapCount()]
+        : [NSString stringWithFormat:@"🏷 %@ · 匹配 %lu 条", label,(unsigned long)gMapCount()];
     UIViewController *vc=self.activeMomentsVC;
     UINavigationBar *bar=vc.navigationController.navigationBar;
     if([txt isEqualToString:self.filterBadgeText] && self.filterBadge.superview && self.filterBadge.superview==bar) return;
@@ -723,6 +786,40 @@ static void MTFStyleCardCell(UITableView *t, UITableViewCell *c, NSIndexPath *ip
 }
 
 // 更新日志页：内容与仓库 CHANGELOG.md 同步（kMTFChangelog，发版时重生成）
+// 更新日志排版（v1.9.0 重写）：不再依赖 iOS 原生 markdown 解析——
+// v1.8.3 在真机上整篇被压成一段（换行、标题、列表全丢，原因在宿主进程内无法复现）。
+// 改行级确定性渲染：## → 20pt 粗体标题 + 段间距；- → • + 悬挂缩进；`code` → 等宽；
+// 其余 → 16pt 正文；空行即段落分隔。换行是显式拼进字符串的 \n，不依赖任何解析器。
+static NSAttributedString *MTFRenderChangelog(NSString *md){
+    NSMutableAttributedString *out=[[NSMutableAttributedString alloc] init];
+    UIFont *hFont=[UIFont boldSystemFontOfSize:20];
+    UIFont *bFont=[UIFont systemFontOfSize:16];
+    UIFont *mFont=[UIFont monospacedSystemFontOfSize:15 weight:UIFontWeightRegular];
+    for(NSString *line in [md componentsSeparatedByString:@"\n"]){
+        BOOL isHead=[line hasPrefix:@"## "] || [line hasPrefix:@"# "];
+        BOOL isBullet=[line hasPrefix:@"- "];
+        NSString *body=line;
+        if([line hasPrefix:@"## "]) body=[line substringFromIndex:3];
+        else if([line hasPrefix:@"# "]) body=[line substringFromIndex:2];
+        else if(isBullet) body=[line substringFromIndex:2];
+        NSMutableAttributedString *la=[[NSMutableAttributedString alloc] init];
+        if(isBullet) [la appendAttributedString:[[NSAttributedString alloc] initWithString:@"•  " attributes:@{NSFontAttributeName:bFont}]];
+        NSArray<NSString *> *parts=[body componentsSeparatedByString:@"`"]; // 奇数段是 `code`
+        for(NSUInteger i=0;i<parts.count;i++){
+            UIFont *f=isHead?hFont:((i%2==1)?mFont:bFont);
+            [la appendAttributedString:[[NSAttributedString alloc] initWithString:parts[i] attributes:@{NSFontAttributeName:f}]];
+        }
+        NSMutableParagraphStyle *ps=[[NSParagraphStyle defaultParagraphStyle] mutableCopy];
+        if(isHead){ ps.paragraphSpacingBefore=14; ps.paragraphSpacing=4; }
+        else if(isBullet){ ps.paragraphSpacing=2; ps.firstLineHeadIndent=0; ps.headIndent=16; }
+        else ps.paragraphSpacing=4;
+        if(la.length) [la addAttribute:NSParagraphStyleAttributeName value:ps range:NSMakeRange(0,la.length)];
+        [out appendAttributedString:la];
+        [out appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n"]];
+    }
+    return out;
+}
+
 @interface MTFChangelogViewController : UIViewController
 @end
 
@@ -736,15 +833,9 @@ static void MTFStyleCardCell(UITableView *t, UITableViewCell *c, NSIndexPath *ip
     tv.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
     tv.editable=NO;
     tv.backgroundColor=[UIColor clearColor];
-    // iOS 15 原生 markdown 渲染：标题加粗放大、列表圆点、代码等宽；失败或老系统回退纯文本
-    NSAttributedString *attr=nil;
-    if(@available(iOS 15.0,*)){
-        NSError *err=nil;
-        // 注意：ObjC 的这个 API 第一个参数是 NSData（Swift 侧是 String，会自动转）
-        attr=[[NSAttributedString alloc] initWithMarkdown:[kMTFChangelog dataUsingEncoding:NSUTF8StringEncoding] options:nil baseURL:nil error:&err];
-        if(err) attr=nil;
-    }
-    if(attr) tv.attributedText=attr;
+    tv.textContainerInset=UIEdgeInsetsMake(12,16,12,16);
+    NSAttributedString *attr=MTFRenderChangelog(kMTFChangelog);
+    if(attr.length) tv.attributedText=attr;
     else { tv.font=[UIFont systemFontOfSize:15]; tv.text=kMTFChangelog; }
     [self.view addSubview:tv];
 }
@@ -821,9 +912,13 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
         c.imageView.image=MTFSettingsIcon(@"tag.fill", [UIColor systemBlueColor]);
         c.textLabel.text=@"朋友圈筛选";
         MTFManager *m=[MTFManager shared];
-        NSUInteger total=[m selectedNames].count + ([m includeUntagged]?1:0);
+        BOOL exclude=[m filterMode]==1;
+        NSUInteger total=exclude
+            ? ([m excludedNames].count + ([m excludeUntagged]?1:0))
+            : ([m selectedNames].count + ([m includeUntagged]?1:0));
         if(![m enabled]) c.detailTextLabel.text=@"已关闭";
         else if(total==0) c.detailTextLabel.text=@"已开启";
+        else if(exclude) c.detailTextLabel.text=[NSString stringWithFormat:@"已开启 · 不看 %lu 个标签",(unsigned long)total];
         else c.detailTextLabel.text=[NSString stringWithFormat:@"已开启 · 已选 %lu 个标签",(unsigned long)total];
         c.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
         return c;
@@ -886,24 +981,30 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
 
 - (void)done { [self dismissViewControllerAnimated:YES completion:nil]; }
 
-// section: 0 开关, 1 批量操作, 2 列表, 3 排查
+// section: 0 开关 + 筛选方式, 1 批量操作, 2 列表, 3 排查
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 4; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s {
-    if(s==0) return 1;
+    if(s==0) return 2;
     if(s==1) return 2;
     if(s==3) return 1;
     return 1 + (NSInteger)self.tags.count; // 首行=未设置标签
+}
+- (CGFloat)tableView:(UITableView *)t heightForRowAtIndexPath:(NSIndexPath *)ip {
+    if(ip.section==0 && ip.row==1) return 56; // 筛选方式分段控件行
+    return UITableViewAutomaticDimension;
 }
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s {
     if(s==0) return @"总开关";
     if(s==1) return @"批量操作";
     if(s==3) return @"排查";
-    return @"按好友标签筛选（可多选）";
+    return [[MTFManager shared] filterMode]==1 ? @"不看以下标签的好友（可多选）" : @"按好友标签筛选（可多选）";
 }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
     if(s==0) return @"开启后方可在信息流页按标签过滤；长按信息流页「我的头像」可随时打开本面板。";
     if(s==2){
         if(self.tags.count==0) return @"未读取到好友标签。请先在「通讯录 → 标签」中创建标签并添加好友。";
+        if([[MTFManager shared] filterMode]==1)
+            return @"拨动标签行右侧的开关选择不看（点行同样切换）；点「成员」打开成员名单。被排除标签里的好友动态将从信息流里去掉，其余人不变。";
         return @"拨动标签行右侧的开关选择筛选（点行同样切换）；点「成员」打开成员名单，点成员跳到他的个人朋友圈——主页时间线窗口之外的旧动态从那里看。";
     }
     return nil;
@@ -930,10 +1031,17 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
     return box;
 }
 
+- (void)changeFilterMode:(UISegmentedControl *)seg {
+    MTFManager *m=[MTFManager shared];
+    [m setFilterMode:seg.selectedSegmentIndex];
+    self.changed=YES; [m applyFilterChanged];
+    [self.tableView reloadData]; // 列表行要换成新档位的勾选状态，标题/脚注也要换
+}
+
 - (void)toggleTag:(UISwitch *)sw {
     MTFManager *m=[MTFManager shared];
     NSInteger row=sw.tag;
-    if(row==0){ [m setIncludeUntagged:sw.on]; }
+    if(row==0){ [m setUntagged:sw.on]; }
     else {
         if(row-1>=(NSInteger)self.tags.count) return;
         NSString *name=self.tags[row-1][@"name"];
@@ -965,6 +1073,15 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
     if(ip.section==0){
         UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
         c.selectionStyle=UITableViewCellSelectionStyleNone;
+        if(ip.row==1){ // 筛选方式：只看这些 / 不看这些（切档不丢另一档的勾选）
+            UISegmentedControl *seg=[[UISegmentedControl alloc] initWithItems:@[@"只看这些", @"不看这些"]];
+            seg.selectedSegmentIndex=[m filterMode];
+            seg.frame=CGRectMake(16,14,self.view.bounds.size.width-32,28);
+            seg.autoresizingMask=UIViewAutoresizingFlexibleWidth;
+            [seg addTarget:self action:@selector(changeFilterMode:) forControlEvents:UIControlEventValueChanged];
+            [c.contentView addSubview:seg];
+            return c;
+        }
         c.textLabel.text=@"启用朋友圈筛选"; c.textLabel.font=[UIFont systemFontOfSize:17];
         UISwitch *sw=[[UISwitch alloc] init]; sw.on=[m enabled];
         [sw addTarget:self action:@selector(toggleEnabled:) forControlEvents:UIControlEventValueChanged];
@@ -988,13 +1105,13 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
     if(ip.row==0){ // 未设置标签的朋友
         c.textLabel.attributedText=MTFNameCount(@"未设置标签的朋友",[m untaggedCount]);
-        c.accessoryView=[self accessoryForRow:0 selected:[m includeUntagged]];
+        c.accessoryView=[self accessoryForRow:0 selected:[m untaggedSelected]];
         return c;
     }
     NSDictionary *tag=self.tags[ip.row-1];
     NSString *name=tag[@"name"];
     c.textLabel.attributedText=MTFNameCount(name,[m memberCountForTag:tag]);
-    BOOL on=[[m selectedNames] containsObject:name];
+    BOOL on=[m isTagSelected:name];
     c.accessoryView=[self accessoryForRow:ip.row selected:on];
     return c;
 }
@@ -1023,8 +1140,8 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
         self.changed=YES; [m applyFilterChanged];
         [t reloadData]; return;
     }
-    if(ip.row==0){ [m setIncludeUntagged:![m includeUntagged]]; }
-    else { NSString *name=self.tags[ip.row-1][@"name"]; [m setName:name selected:![[m selectedNames] containsObject:name]]; }
+    if(ip.row==0){ [m setUntagged:![m untaggedSelected]]; }
+    else { NSString *name=self.tags[ip.row-1][@"name"]; [m setName:name selected:![m isTagSelected:name]]; }
     self.changed=YES; [m applyFilterChanged];
     [t reloadData]; // 整表刷新，杜绝单行复用错位
 }
@@ -1060,20 +1177,25 @@ static NSString *MTFBuildDiagnostics(void){
     MTFManager *m=[MTFManager shared];
     NSMutableString *r=[NSMutableString string];
     [r appendFormat:@"MomentsTagFilter 诊断 (v%@)\n", kMTFVersion];
-    [r appendFormat:@"开关: %@  已选标签: %@  含未标签: %@\n",
+    BOOL exclude=[m filterMode]==1;
+    [r appendFormat:@"开关: %@  方式: %@  已选标签: %@  含未标签: %@\n",
         [m enabled]?@"开":@"关",
-        [m selectedNames].count?[[m selectedNames] componentsJoinedByString:@", "]:@"(无)",
-        [m includeUntagged]?@"是":@"否"];
+        exclude?@"不看":@"只看",
+        exclude
+            ? ([m excludedNames].count?[[m excludedNames] componentsJoinedByString:@", "]:@"(无)")
+            : ([m selectedNames].count?[[m selectedNames] componentsJoinedByString:@", "]:@"(无)"),
+        [m untaggedSelected]?@"是":@"否"];
     [m ensureSets];
-    NSSet *fresh=[m freshAllowedSet];
+    NSSet *fresh=exclude?[m freshBlockedSet]:[m freshAllowedSet];
+    NSSet *cached=exclude?m.blockedUsernames:m.allowedUsernames;
     [r appendFormat:@"成员集合: 缓存 %lu 人 / 现算 %@ 人  已打标签总集 %lu 人\n",
-        (unsigned long)(m.allowedUsernames?m.allowedUsernames.count:0),
+        (unsigned long)(cached?cached.count:0),
         fresh?[NSString stringWithFormat:@"%lu",(unsigned long)fresh.count]:@"取不到(服务未就绪)",
         (unsigned long)(m.taggedUnion?m.taggedUnion.count:0)];
-    if(fresh && m.allowedUsernames && fresh.count!=m.allowedUsernames.count)
+    if(fresh && cached && fresh.count!=cached.count)
         [r appendString:@"⚠️ 缓存与现算不一致: 缓存是旧的或被冷启动毒化\n"];
     ContactTagMgr *tm=[m tagMgr];
-    for(NSString *name in [m selectedNames]){
+    for(NSString *name in (exclude?[m excludedNames]:[m selectedNames])){
         NSMutableArray *sample=[NSMutableArray array]; NSInteger cnt=-1; id firstEl=nil;
         @try{ NSArray *cs=[tm getContactsForTagName:name];
             if([cs isKindOfClass:[NSArray class]]){ cnt=(NSInteger)cs.count; firstEl=cs.count?cs[0]:nil;
