@@ -405,52 +405,58 @@ static BOOL MTFIsFriend(id c){
     dispatch_async(dispatch_get_main_queue(),^{ lb.text=txt; });
 }
 
-// 筛选状态浮标：筛选生效时在信息流底部显示「已选标签 · 匹配 N 条」，
-// 让用户一眼确认筛选到底有没有生效（点浮标打开设置面板）。
+// 筛选状态副标题：移到导航栏「朋友圈」标题正下方（11pt 灰字，不遮挡内容），
+// 点它打开设置面板。单标签显名字；多标签必显「首个 等共 N 个标签」，
+// 且文案足够短、不会被截断——多选状态一眼可见，不再出现“只显两个、后缀时有时无”。
 - (void)refreshFilterBadge {
     if(![self isActive]){ [self removeFilterBadge]; return; }
-    // 多标签时全显会把浮标撑出屏幕、两侧裁掉后看起来只剩一个标签：
-    // 名字总长 ≤18 字全显；更长时显前两个 + 总数，保证多选状态一眼可见。
     NSMutableArray *parts=[NSMutableArray arrayWithArray:[self selectedNames]];
     if([self includeUntagged]) [parts addObject:@"未标签"];
-    NSString *joined=[parts componentsJoinedByString:@"、"];
     NSString *label;
-    if(joined.length<=18) label=joined;
-    else if(parts.count>=2) label=[NSString stringWithFormat:@"%@、%@ 等共 %lu 个标签", parts[0], parts[1], (unsigned long)parts.count];
-    else label=joined;
-    NSString *txt=[NSString stringWithFormat:@"  🏷 %@ · 匹配 %lu 条  ", label,(unsigned long)gMapCount()];
-    if([txt isEqualToString:self.filterBadgeText] && self.filterBadge.superview && self.filterBadge.superview==self.activeMomentsVC.view) return;
+    if(parts.count<=1){
+        NSString *n=parts.count?parts[0]:@"";
+        if(n.length>16) n=[[n substringToIndex:16] stringByAppendingString:@"…"];
+        label=n;
+    } else {
+        NSString *first=parts[0];
+        if(first.length>12) first=[[first substringToIndex:12] stringByAppendingString:@"…"];
+        label=[NSString stringWithFormat:@"%@ 等共 %lu 个标签", first, (unsigned long)parts.count];
+    }
+    NSString *txt=[NSString stringWithFormat:@"🏷 %@ · 匹配 %lu 条", label,(unsigned long)gMapCount()];
+    UIViewController *vc=self.activeMomentsVC;
+    UINavigationBar *bar=vc.navigationController.navigationBar;
+    if([txt isEqualToString:self.filterBadgeText] && self.filterBadge.superview && self.filterBadge.superview==bar) return;
     self.filterBadgeText=txt;
     dispatch_async(dispatch_get_main_queue(),^{
-        UIViewController *vc=self.activeMomentsVC;
-        if(!vc || !vc.view || ![self isActive]) return;
+        UIViewController *vc2=self.activeMomentsVC;
+        UINavigationBar *bar2=vc2.navigationController.navigationBar;
+        if(!vc2 || !bar2 || ![self isActive]) return;
         UILabel *b=self.filterBadge;
-        if(!b || b.superview!=vc.view){
+        if(!b || b.superview!=bar2){
             [b removeFromSuperview];
             b=[[UILabel alloc] init];
-            b.backgroundColor=[[UIColor blackColor] colorWithAlphaComponent:0.72];
-            b.textColor=[UIColor whiteColor];
-            b.font=[UIFont systemFontOfSize:12];
+            b.backgroundColor=[UIColor clearColor];
+            b.textColor=[UIColor grayColor];
+            b.font=[UIFont systemFontOfSize:11];
             b.textAlignment=NSTextAlignmentCenter;
             b.numberOfLines=1;
             b.lineBreakMode=NSLineBreakByTruncatingTail;
-            b.layer.cornerRadius=13; b.layer.masksToBounds=YES;
             b.userInteractionEnabled=YES;
             [b addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(filterBadgeTapped)]];
-            [vc.view addSubview:b];
+            [bar2 addSubview:b];
             self.filterBadge=b;
         }
         b.text=self.filterBadgeText;
         [b sizeToFit];
-        CGRect f=b.frame; f.size.height=26; f.size.width+=10;
-        // 浮标宽度封顶（屏宽-32），超了尾部截断，杜绝撑出屏幕后两侧被裁、看着只剩一个标签
-        CGFloat maxW=vc.view.bounds.size.width-32;
+        CGRect f=b.frame; f.size.height=14;
+        // 左右留出返回/相机按钮，超了尾部截断
+        CGFloat maxW=bar2.bounds.size.width-120;
         if(f.size.width>maxW) f.size.width=maxW;
-        f.origin.x=(vc.view.bounds.size.width-f.size.width)/2;
-        f.origin.y=vc.view.bounds.size.height-f.size.height-30;
+        f.origin.x=(bar2.bounds.size.width-f.size.width)/2;
+        f.origin.y=bar2.bounds.size.height-14;
         b.frame=f;
-        b.autoresizingMask=UIViewAutoresizingFlexibleTopMargin|UIViewAutoresizingFlexibleLeftMargin|UIViewAutoresizingFlexibleRightMargin;
-        [vc.view bringSubviewToFront:b];
+        b.autoresizingMask=UIViewAutoresizingFlexibleLeftMargin|UIViewAutoresizingFlexibleRightMargin|UIViewAutoresizingFlexibleTopMargin;
+        [bar2 bringSubviewToFront:b];
     });
 }
 - (void)removeFilterBadge {
@@ -841,7 +847,7 @@ static void MTFRebuildMapIfNeeded(WCFacade *self, unsigned long long origCount){
 static NSString *MTFBuildDiagnostics(void){
     MTFManager *m=[MTFManager shared];
     NSMutableString *r=[NSMutableString string];
-    [r appendString:@"MomentsTagFilter 诊断 (v1.7.4)\n"];
+    [r appendString:@"MomentsTagFilter 诊断 (v1.7.5)\n"];
     [r appendFormat:@"开关: %@  已选标签: %@  含未标签: %@\n",
         [m enabled]?@"开":@"关",
         [m selectedNames].count?[[m selectedNames] componentsJoinedByString:@", "]:@"(无)",
@@ -999,6 +1005,9 @@ static void MTFPresentSettings(UIViewController *host) {
 - (void)viewWillDisappear:(BOOL)animated {
     %orig;
     if([MTFManager shared].activeMomentsVC==self) [MTFManager shared].activeMomentsVC=nil;
+    // 导航栏是各页面共用的，离开信息流页就摘掉副标题，免得残留在好友个人页/设置页上；
+    // 返回时 viewDidAppear 会重新挂上
+    [[MTFManager shared] removeFilterBadge];
 }
 
 %new
@@ -1016,7 +1025,7 @@ static void MTFRegisterIntoPluginsMgr(void){
     @try {
         WCPluginsMgr *mgr=[cls sharedInstance]; BOOL exists=NO;
         @try { for(id p in [mgr plugins]){ NSString *tt=nil; @try{ tt=[p valueForKey:@"title"]; }@catch(__unused id e){} if([tt isEqualToString:@"朋友圈标签筛选"]){ exists=YES; break; } } } @catch(__unused id e){}
-        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.7.4" controller:@"MTFSettingsViewController"];
+        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.7.5" controller:@"MTFSettingsViewController"];
     } @catch(__unused id e){}
 }
 
