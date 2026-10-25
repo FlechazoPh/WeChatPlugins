@@ -372,10 +372,14 @@ static BOOL MTFIsFriend(id c){
     @try { if(cls && [cls respondsToSelector:@selector(shareInstance)]) mgr=[cls shareInstance]; } @catch(__unused id e){}
     SEL sel=@selector(requestUserFirstPageAsync:isTopList:completion:);
     if(!mgr || ![mgr respondsToSelector:sel]){ finish(@[]); return; }
+    // v1.7.0 闪退的首要嫌疑：栈 block 以 id 形式经 objc_msgSend 传给原生桥，
+    // 若桥接层只存指针不 Block_copy，方法返回后栈帧失效、回调时即闪退。
+    // 改为显式堆拷贝再传（堆 block 即使不释放也只泄漏不闪退）。
+    void (^cb)(id) = [^(id result){
+        finish([self parseFirstPageResult:result]);
+    } copy];
     @try {
-        ((void(*)(id,SEL,id,BOOL,id))objc_msgSend)(mgr, sel, u, NO, ^(id result){
-            finish([self parseFirstPageResult:result]);
-        });
+        ((void(*)(id,SEL,id,BOOL,id))objc_msgSend)(mgr, sel, u, NO, cb);
     } @catch(__unused id e){ finish(@[]); }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(8*NSEC_PER_SEC)),dispatch_get_main_queue(),^{ finish(@[]); });
 }
@@ -1063,7 +1067,7 @@ static void MTFRebuildMapIfNeeded(WCFacade *self, unsigned long long origCount){
 static NSString *MTFBuildDiagnostics(void){
     MTFManager *m=[MTFManager shared];
     NSMutableString *r=[NSMutableString string];
-    [r appendString:@"MomentsTagFilter 诊断 (v1.7.0)\n"];
+    [r appendString:@"MomentsTagFilter 诊断 (v1.7.1)\n"];
     [r appendFormat:@"开关: %@  已选标签: %@  含未标签: %@\n",
         [m enabled]?@"开":@"关",
         [m selectedNames].count?[[m selectedNames] componentsJoinedByString:@", "]:@"(无)",
@@ -1236,7 +1240,7 @@ static void MTFRegisterIntoPluginsMgr(void){
     @try {
         WCPluginsMgr *mgr=[cls sharedInstance]; BOOL exists=NO;
         @try { for(id p in [mgr plugins]){ NSString *tt=nil; @try{ tt=[p valueForKey:@"title"]; }@catch(__unused id e){} if([tt isEqualToString:@"朋友圈标签筛选"]){ exists=YES; break; } } } @catch(__unused id e){}
-        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.7.0" controller:@"MTFSettingsViewController"];
+        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.7.1" controller:@"MTFSettingsViewController"];
     } @catch(__unused id e){}
 }
 
