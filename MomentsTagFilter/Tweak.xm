@@ -635,32 +635,71 @@ static BOOL MTFIsFriend(id c){
 // 记录每个微信原生页面出现时的类名 + 字符串/链接型 ivar（文章页 URL 里含 __biz、赞赏页参数都在这类 ivar 里）。
 // 只存本机诊断页，不上传任何东西；装回正式版即消失。
 static NSMutableArray<NSString *> *gMTFPageLog = nil;
+static NSString *MTFDebugDescribe(id v, int depth){
+    if(!v) return nil;
+    @try {
+        if([v isKindOfClass:[NSString class]]) return ([(NSString*)v length]>300)?[[(NSString*)v substringToIndex:300] stringByAppendingString:@"…"]:v;
+        if([v isKindOfClass:[NSURL class]]) return [(NSURL*)v absoluteString];
+        if(depth<=0) return [NSString stringWithFormat:@"<%@>", NSStringFromClass([v class])];
+        if([v isKindOfClass:[NSDictionary class]]){
+            NSMutableString *r=[NSMutableString stringWithString:@"{"];
+            for(id k in [(NSDictionary*)v allKeys]){
+                NSString *ds=MTFDebugDescribe([(NSDictionary*)v objectForKey:k], 0);
+                if(ds) [r appendFormat:@"%@:%@, ", k, ds];
+                if(r.length>1500) break;
+            }
+            [r appendString:@"}"];
+            return r;
+        }
+        if([v isKindOfClass:[NSArray class]] || [v isKindOfClass:[NSSet class]]){
+            NSArray *arr=[v isKindOfClass:[NSArray class]]?v:[(NSSet*)v allObjects];
+            NSMutableString *r=[NSMutableString stringWithFormat:@"<%@:%lu>[", NSStringFromClass([v class]), (unsigned long)arr.count];
+            for(id e in arr){
+                NSString *ds=MTFDebugDescribe(e, 0);
+                if(ds) [r appendFormat:@"%@, ", ds];
+                if(r.length>1500) break;
+            }
+            [r appendString:@"]"];
+            return r;
+        }
+        NSMutableString *r=[NSMutableString stringWithFormat:@"<%@>", NSStringFromClass([v class])];
+        unsigned int n=0;
+        Ivar *ivars=class_copyIvarList([v class], &n);
+        for(unsigned int i=0;i<n;i++){
+            const char *tn=ivar_getTypeEncoding(ivars[i]);
+            if(!tn || tn[0]!='@') continue;
+            const char *nm=ivar_getName(ivars[i]);
+            if(!nm) continue;
+            id iv=object_getIvar(v, ivars[i]);
+            NSString *ds=MTFDebugDescribe(iv, 0);
+            if(ds) [r appendFormat:@" %s=%@", nm, ds];
+            if(r.length>1500) break;
+        }
+        if(ivars) free(ivars);
+        return r;
+    } @catch(__unused id ex){ return [NSString stringWithFormat:@"<%@>", NSStringFromClass([v class])]; }
+}
 static void MTFDebugRecordPage(UIViewController *vc){
     @try {
         if(!gMTFPageLog) gMTFPageLog=[NSMutableArray array];
         NSString *cls=NSStringFromClass([vc class]);
         if([cls hasPrefix:@"UI"] || [cls hasPrefix:@"MTF"]) return;
         NSMutableString *e=[NSMutableString stringWithFormat:@"[%@] %@\n", [NSDate date], cls];
-        unsigned int shown=0;
-        for(Class c=[vc class]; c && c!=[UIViewController class] && shown<50; c=class_getSuperclass(c)){
+        for(Class c=[vc class]; c && c!=[UIViewController class]; c=class_getSuperclass(c)){
             unsigned int n=0;
             Ivar *ivars=class_copyIvarList(c, &n);
-            for(unsigned int i=0;i<n && shown<50;i++){
+            for(unsigned int i=0;i<n;i++){
                 const char *tn=ivar_getTypeEncoding(ivars[i]);
                 if(!tn || tn[0]!='@') continue;
                 const char *nm=ivar_getName(ivars[i]);
                 if(!nm) continue;
                 id v=object_getIvar(vc, ivars[i]);
-                NSString *vs=nil;
-                if([v isKindOfClass:[NSString class]]) vs=v;
-                else if([v isKindOfClass:[NSURL class]]) vs=[(NSURL*)v absoluteString];
-                if(vs.length){
-                    if(vs.length>300) vs=[vs substringToIndex:300];
-                    [e appendFormat:@"  %s = %@\n", nm, vs];
-                    shown++;
-                }
+                NSString *ds=MTFDebugDescribe(v, 1);
+                if(ds) [e appendFormat:@"  %s = %@\n", nm, ds];
+                if(e.length>3000) break;
             }
             if(ivars) free(ivars);
+            if(e.length>3000) break;
         }
         [gMTFPageLog addObject:e];
         while(gMTFPageLog.count>40) [gMTFPageLog removeObjectAtIndex:0];
