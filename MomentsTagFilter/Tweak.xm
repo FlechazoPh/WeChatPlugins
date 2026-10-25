@@ -89,11 +89,11 @@ static NSString *const kMTFSelectedNames  = @"MTFSelectedTagNames";
 static NSString *const kMTFIncludeUntagged= @"MTFIncludeUntagged";
 static NSString *const kMTFNoTagKey       = @"__MTF_NOTAG__";
 
-static const NSUInteger kMTFTargetMatch   = 10;   // 目标：补拉到至少这么多条匹配项
-static const NSUInteger kMTFMaxAutoPages   = 40;  // 单次筛选最多「成功落地」的补拉页数（进度驱动计数）
-static const NSUInteger kMTFMaxStallTicks  = 3;   // 一页发出后连续无增长的等待次数（约 4.5 秒），超了视为请求被吞
+static const NSUInteger kMTFTargetMatch   = 50;   // 目标：补拉到至少这么多条匹配项（放宽，让窗口尽量往深处走）
+static const NSUInteger kMTFMaxAutoPages   = 150; // 单次筛选最多「成功落地」的补拉页数（进度驱动计数；仍以服务器 noMore 为准）
+static const NSUInteger kMTFMaxStallTicks  = 3;   // 一页发出后连续无增长的等待次数（间隔放慢后约 9 秒），超了视为请求被吞
 static const NSUInteger kMTFMaxRetries     = 3;   // 请求被吞后最多重发次数
-static const NSTimeInterval kMTFPageDelay  = 1.5; // 每次补拉检查间隔（防封）
+static const NSTimeInterval kMTFPageDelay  = 3.0; // 每次补拉检查间隔（放慢：降请求频率，看服务器是否多给几页）
 static const NSTimeInterval kMTFFillCooldown = 3.0;
 
 static NSString *MTFAuthorOfItem(id item) {
@@ -830,7 +830,7 @@ static void MTFRebuildMapIfNeeded(WCFacade *self, unsigned long long origCount){
 static NSString *MTFBuildDiagnostics(void){
     MTFManager *m=[MTFManager shared];
     NSMutableString *r=[NSMutableString string];
-    [r appendString:@"MomentsTagFilter 诊断 (v1.7.2)\n"];
+    [r appendString:@"MomentsTagFilter 诊断 (v1.7.3)\n"];
     [r appendFormat:@"开关: %@  已选标签: %@  含未标签: %@\n",
         [m enabled]?@"开":@"关",
         [m selectedNames].count?[[m selectedNames] componentsJoinedByString:@", "]:@"(无)",
@@ -1003,7 +1003,7 @@ static void MTFRegisterIntoPluginsMgr(void){
     @try {
         WCPluginsMgr *mgr=[cls sharedInstance]; BOOL exists=NO;
         @try { for(id p in [mgr plugins]){ NSString *tt=nil; @try{ tt=[p valueForKey:@"title"]; }@catch(__unused id e){} if([tt isEqualToString:@"朋友圈标签筛选"]){ exists=YES; break; } } } @catch(__unused id e){}
-        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.7.2" controller:@"MTFSettingsViewController"];
+        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.7.3" controller:@"MTFSettingsViewController"];
     } @catch(__unused id e){}
 }
 
