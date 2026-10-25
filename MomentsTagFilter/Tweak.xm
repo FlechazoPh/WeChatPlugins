@@ -84,6 +84,8 @@
 
 #pragma mark - 常量
 
+// 版本号唯一来源（Tweak.xm 内三处共用；control 文件里的 Version 仍需手动同步）
+static NSString *const kMTFVersion        = @"1.8.0";
 static NSString *const kMTFEnabled        = @"MTFEnabled";
 static NSString *const kMTFSelectedNames  = @"MTFSelectedTagNames";
 static NSString *const kMTFIncludeUntagged= @"MTFIncludeUntagged";
@@ -111,6 +113,8 @@ static NSUInteger gMapCount(void);
 static NSString *MTFBuildDiagnostics(void);
 // 设置面板呈现（实现见下方长按入口区）
 static void MTFPresentSettings(UIViewController *host);
+// 副标题快捷入口：直接落在二级菜单（左上角返回可回一级菜单）
+static void MTFPresentFilterSettings(UIViewController *host);
 
 #pragma mark - 筛选引擎
 
@@ -465,7 +469,7 @@ static BOOL MTFIsFriend(id c){
 }
 - (void)filterBadgeTapped {
     UIViewController *vc=self.activeMomentsVC;
-    if(vc) MTFPresentSettings(vc);
+    if(vc) MTFPresentFilterSettings(vc);
 }
 
 - (void)applyFilterChanged {
@@ -584,10 +588,11 @@ static NSString *MTFDisplayNameOfContact(id c){
 
 @implementation MTFMemberListViewController
 
-- (instancetype)init { return [super initWithStyle:UITableViewStyleGrouped]; }
+- (instancetype)init { return [super initWithStyle:UITableViewStyleInsetGrouped]; }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    MTFApplySettingsNavAppearance(self.navigationController.navigationBar);
     // 按显示名排序，方便找人
     self.contacts=[self.contacts sortedArrayUsingComparator:^NSComparisonResult(id a, id b){
         return [MTFDisplayNameOfContact(a) localizedStandardCompare:MTFDisplayNameOfContact(b)];
@@ -631,6 +636,42 @@ static NSString *MTFDisplayNameOfContact(id c){
 
 @end
 
+#pragma mark - 设置 UI：系统「设置」App 同款组件
+
+// iOS 设置式图标：彩色圆角方块 + 白色 SF Symbol（取不到符号时回退 🏷，不崩）
+static UIImage *MTFSettingsIcon(NSString *symbolName, UIColor *bg){
+    CGFloat size=29.0;
+    UIGraphicsImageRendererFormat *fmt=[UIGraphicsImageRendererFormat defaultFormat];
+    fmt.opaque=NO;
+    UIGraphicsImageRenderer *r=[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(size,size) format:fmt];
+    return [r imageWithActions:^(UIGraphicsImageRendererContext *ctx){
+        UIBezierPath *p=[UIBezierPath bezierPathWithRoundedRect:CGRectMake(0,0,size,size) cornerRadius:7];
+        [bg setFill]; [p fill];
+        UIImage *sym=nil;
+        if(@available(iOS 13.0,*)) sym=[UIImage systemImageNamed:symbolName];
+        if(sym){
+            UIImage *white=nil;
+            if(@available(iOS 13.0,*)) white=[sym imageWithTintColor:[UIColor whiteColor] renderingMode:UIImageRenderingModeAlwaysOriginal];
+            CGFloat s=20; [(white?:sym) drawInRect:CGRectMake((size-s)/2,(size-s)/2,s,s)];
+        } else {
+            NSString *e=@"🏷";
+            NSDictionary *attrs=@{NSFontAttributeName:[UIFont systemFontOfSize:16]};
+            CGSize ts=[e sizeWithAttributes:attrs];
+            [e drawAtPoint:CGPointMake((size-ts.width)/2,(size-ts.height)/2) withAttributes:attrs];
+        }
+    }];
+}
+
+// 两级菜单共用：不透明导航栏，避免下滑时内容穿透到标题/「完成」下方造成文字重叠
+static void MTFApplySettingsNavAppearance(UINavigationBar *bar){
+    if(!bar) return;
+    if (@available(iOS 13.0, *)) {
+        UINavigationBarAppearance *ap=[[UINavigationBarAppearance alloc] init];
+        [ap configureWithOpaqueBackground];
+        bar.standardAppearance=ap; bar.scrollEdgeAppearance=ap; bar.compactAppearance=ap;
+    }
+}
+
 #pragma mark - 设置 / 标签选择页
 
 // 「名字 (人数)」——人数紧贴名字、灰色括号，与系统通讯录标签页一致
@@ -646,6 +687,75 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
     return s;
 }
 
+#pragma mark - 一级菜单：插件功能列表（以后新增功能只在这里加一行）
+
+@class MTFSettingsViewController; // 二级菜单定义在下方，先前向声明
+@interface MTFRootViewController : UITableViewController
+@property (nonatomic, assign) BOOL presentedModally;
+@end
+
+@implementation MTFRootViewController
+
+- (instancetype)init { return [super initWithStyle:UITableViewStyleInsetGrouped]; }
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title=@"朋友圈标签筛选";
+    if(self.presentedModally)
+        self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(done)];
+    MTFApplySettingsNavAppearance(self.navigationController.navigationBar);
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self.tableView reloadData]; // 从二级菜单返回时刷新状态副文案
+}
+
+- (void)done { [self dismissViewControllerAnimated:YES completion:nil]; }
+
+// section: 0 功能, 1 关于
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 2; }
+- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return 1; }
+- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s {
+    return s==0 ? @"功能" : @"关于";
+}
+- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
+    if(s==0) return @"以后新增的功能都会出现在这里。";
+    return nil;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip {
+    if(ip.section==0){
+        UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+        c.imageView.image=MTFSettingsIcon(@"tag.fill", [UIColor systemBlueColor]);
+        c.textLabel.text=@"朋友圈筛选";
+        MTFManager *m=[MTFManager shared];
+        NSUInteger total=[m selectedNames].count + ([m includeUntagged]?1:0);
+        if(![m enabled]) c.detailTextLabel.text=@"已关闭";
+        else if(total==0) c.detailTextLabel.text=@"已开启";
+        else c.detailTextLabel.text=[NSString stringWithFormat:@"已开启 · 已选 %lu 个标签",(unsigned long)total];
+        c.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
+        return c;
+    }
+    UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+    c.selectionStyle=UITableViewCellSelectionStyleNone;
+    c.textLabel.text=@"版本";
+    c.detailTextLabel.text=kMTFVersion;
+    return c;
+}
+
+- (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip {
+    [t deselectRowAtIndexPath:ip animated:YES];
+    if(ip.section!=0) return;
+    MTFSettingsViewController *vc=[MTFSettingsViewController new];
+    vc.presentedModally=NO; // 二级菜单：左上角返回一级菜单，不用「完成」
+    [self.navigationController pushViewController:vc animated:YES];
+}
+
+@end
+
+#pragma mark - 二级菜单：朋友圈筛选（开关 + 筛选列表）
+
 @interface MTFSettingsViewController : UITableViewController
 @property (nonatomic, strong) NSArray<NSDictionary *> *tags;
 @property (nonatomic, assign) BOOL presentedModally;
@@ -654,22 +764,16 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
 
 @implementation MTFSettingsViewController
 
-- (instancetype)init { return [super initWithStyle:UITableViewStyleGrouped]; }
+- (instancetype)init { return [super initWithStyle:UITableViewStyleInsetGrouped]; }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title=@"朋友圈标签筛选";
+    self.title=@"朋友圈筛选";
     self.tableView.rowHeight=UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight=56.0;
     if(self.presentedModally)
         self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(done)];
-    // 不透明导航栏，避免下滑时内容穿透到标题/「完成」下方造成文字重叠
-    if (@available(iOS 13.0, *)) {
-        UINavigationBarAppearance *ap=[[UINavigationBarAppearance alloc] init];
-        [ap configureWithOpaqueBackground];
-        UINavigationBar *bar=self.navigationController.navigationBar;
-        bar.standardAppearance=ap; bar.scrollEdgeAppearance=ap; bar.compactAppearance=ap;
-    }
+    MTFApplySettingsNavAppearance(self.navigationController.navigationBar);
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -713,7 +817,7 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
 
 // 行右侧配件：勾选标记 + 「成员 ›」按钮（accessoryView 会顶掉 accessoryType 的 ✓，故手动组合）
 - (UIView *)accessoryForRow:(NSInteger)row selected:(BOOL)on {
-    UIView *box=[[UIView alloc] initWithFrame:CGRectMake(0,0,(on?24:0)+58,30)];
+    UIView *box=[[UIView alloc] initWithFrame:CGRectMake(0,0,(on?24:0)+62,30)];
     CGFloat x=0;
     if(on){
         UILabel *ck=[[UILabel alloc] initWithFrame:CGRectMake(0,3,20,24)];
@@ -722,8 +826,8 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
         [box addSubview:ck]; x=24;
     }
     UIButton *btn=[UIButton buttonWithType:UIButtonTypeSystem];
-    btn.frame=CGRectMake(x,0,58,30);
-    btn.titleLabel.font=[UIFont systemFontOfSize:15];
+    btn.frame=CGRectMake(x,0,62,30);
+    btn.titleLabel.font=[UIFont systemFontOfSize:17]; // 与正文同字号，整表统一
     [btn setTitle:@"成员 ›" forState:UIControlStateNormal];
     btn.tag=row;
     [btn addTarget:self action:@selector(openMembers:) forControlEvents:UIControlEventTouchUpInside];
@@ -847,7 +951,7 @@ static void MTFRebuildMapIfNeeded(WCFacade *self, unsigned long long origCount){
 static NSString *MTFBuildDiagnostics(void){
     MTFManager *m=[MTFManager shared];
     NSMutableString *r=[NSMutableString string];
-    [r appendString:@"MomentsTagFilter 诊断 (v1.7.5)\n"];
+    [r appendFormat:@"MomentsTagFilter 诊断 (v%@)\n", kMTFVersion];
     [r appendFormat:@"开关: %@  已选标签: %@  含未标签: %@\n",
         [m enabled]?@"开":@"关",
         [m selectedNames].count?[[m selectedNames] componentsJoinedByString:@", "]:@"(无)",
@@ -976,11 +1080,24 @@ static void MTFAttachLongPress(UIViewController *vc) {
 }
 
 static void MTFPresentSettings(UIViewController *host) {
-    MTFSettingsViewController *vc = [MTFSettingsViewController new];
+    MTFRootViewController *vc = [MTFRootViewController new];
     vc.presentedModally = YES;
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
     nav.modalPresentationStyle = UIModalPresentationFullScreen;
     [host presentViewController:nav animated:YES completion:nil];
+}
+
+// 副标题是筛选状态的快捷入口：直接落在二级菜单，左上角返回可回一级菜单
+static void MTFPresentFilterSettings(UIViewController *host) {
+    MTFRootViewController *root = [MTFRootViewController new];
+    root.presentedModally = YES;
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:root];
+    nav.modalPresentationStyle = UIModalPresentationFullScreen;
+    [host presentViewController:nav animated:YES completion:^{
+        MTFSettingsViewController *vc=[MTFSettingsViewController new];
+        vc.presentedModally=NO;
+        [nav pushViewController:vc animated:NO];
+    }];
 }
 
 #pragma mark - Hook：信息流页 —— 长按「我的头像」进入筛选
@@ -1025,7 +1142,7 @@ static void MTFRegisterIntoPluginsMgr(void){
     @try {
         WCPluginsMgr *mgr=[cls sharedInstance]; BOOL exists=NO;
         @try { for(id p in [mgr plugins]){ NSString *tt=nil; @try{ tt=[p valueForKey:@"title"]; }@catch(__unused id e){} if([tt isEqualToString:@"朋友圈标签筛选"]){ exists=YES; break; } } } @catch(__unused id e){}
-        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.7.5" controller:@"MTFSettingsViewController"];
+        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:kMTFVersion controller:@"MTFRootViewController"];
     } @catch(__unused id e){}
 }
 
