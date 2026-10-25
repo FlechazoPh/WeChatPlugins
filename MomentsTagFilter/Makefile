@@ -1,4 +1,4 @@
-# MomentsTagFilter - Theos tweak Makefile
+# WCUltra - Theos tweak Makefile
 # 构建: 在装有 Theos + iOS SDK 的 macOS/Linux 上执行 `make package`
 # 可选: export THEOS_DEVICE_IP=<设备IP> 后 `make install` 直接安装
 
@@ -11,10 +11,10 @@ INSTALL_TARGET_PROCESSES = WeChat
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = MomentsTagFilter
+TWEAK_NAME = WCUltra
 
-MomentsTagFilter_FILES = Tweak.xm
-MomentsTagFilter_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
-MomentsTagFilter_FRAMEWORKS = UIKit Foundation CoreGraphics
+WCUltra_FILES = Tweak.xm
+WCUltra_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
+WCUltra_FRAMEWORKS = UIKit Foundation CoreGraphics
 
 include $(THEOS_MAKE_PATH)/tweak.mk

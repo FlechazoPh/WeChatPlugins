@@ -1,4 +1,4 @@
-name: Build MomentsTagFilter deb
+name: Build WCUltra deb
 
 # 自动在 macOS runner 上用 Theos 编译 MomentsTagFilter/ 子项目，同时产出 rootless 与 rootful 两种 .deb。
 # 触发：push，或 Actions 页 "Run workflow"。产物在运行页 Artifacts: "MomentsTagFilter-deb"。
@@ -54,7 +54,7 @@ jobs:
           rm -f packages/*.deb
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
           mkdir -p "$GITHUB_WORKSPACE/dist"
-          cp packages/*.deb "$GITHUB_WORKSPACE/dist/momentsfil_${VERSION}_rootless.deb"
+          cp packages/*.deb "$GITHUB_WORKSPACE/dist/wcultra_${VERSION}_rootless.deb"
           ls -la "$GITHUB_WORKSPACE/dist"
 
       - name: Build rootful deb
@@ -62,13 +62,13 @@ jobs:
           make clean || true
           rm -f packages/*.deb
           make package FINALPACKAGE=1
-          cp packages/*.deb "$GITHUB_WORKSPACE/dist/momentsfil_${VERSION}_rootful.deb"
+          cp packages/*.deb "$GITHUB_WORKSPACE/dist/wcultra_${VERSION}_rootful.deb"
           ls -la "$GITHUB_WORKSPACE/dist"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: MomentsTagFilter-deb
+          name: WCUltra-deb
           path: dist/*.deb
 
       - name: Publish GitHub Release
@@ -81,7 +81,7 @@ jobs:
           TAG="v${VERSION}"
           NOTES="$RUNNER_TEMP/notes.md"
           {
-            echo "## MomentsTagFilter ${TAG}"
+            echo "## WCUltra ${TAG}"
             echo
             echo "## 📝 更新日志"
             echo
@@ -98,8 +98,8 @@ jobs:
             fi
             echo "## 📦 安装包"
             echo
-            echo "- \`momentsfil_${VERSION}_rootless.deb\`：rootless 越狱（Dopamine、palera1n rootless 等，安装路径 /var/jb）"
-            echo "- \`momentsfil_${VERSION}_rootful.deb\`：rootful 越狱（checkra1n、unc0ver 等，安装路径 /）"
+            echo "- \`wcultra_${VERSION}_rootless.deb\`：rootless 越狱（Dopamine、palera1n rootless 等，安装路径 /var/jb）"
+            echo "- \`wcultra_${VERSION}_rootful.deb\`：rootful 越狱（checkra1n、unc0ver 等，安装路径 /）"
             echo
             echo "_构建时间：$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')（北京时间） · 提交：${GITHUB_SHA:0:7}_"
           } > "$NOTES"
@@ -138,7 +138,7 @@ jobs:
               s = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', s)
               s = re.sub(r'`([^`]+)`', r'<code>\1</code>', s)
               out.append(s)
-          title = f"<b>📦 MomentsTagFilter v{ver} 发布</b>"
+          title = f"<b>📦 WCUltra v{ver} 发布</b>"
           if os.environ.get('TG_TEST') == 'true': title += '（流水线转发测试）'
           text = (title + '\n\n' + '\n'.join(out).strip())[:2600]
 
