@@ -689,7 +689,14 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
 
 #pragma mark - 一级菜单：插件功能列表（以后新增功能只在这里加一行）
 
-@class MTFSettingsViewController; // 二级菜单定义在下方，先前向声明
+// 二级菜单的接口提前声明（实现仍在下方）：一级菜单要 alloc 它并设属性，
+// 只靠 @class 前向声明编译不过（+new、属性访问、传参都要完整接口）
+@interface MTFSettingsViewController : UITableViewController
+@property (nonatomic, strong) NSArray<NSDictionary *> *tags;
+@property (nonatomic, assign) BOOL presentedModally;
+@property (nonatomic, assign) BOOL changed;
+@end
+
 @interface MTFRootViewController : UITableViewController
 @property (nonatomic, assign) BOOL presentedModally;
 @end
@@ -755,13 +762,7 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
 @end
 
 #pragma mark - 二级菜单：朋友圈筛选（开关 + 筛选列表）
-
-@interface MTFSettingsViewController : UITableViewController
-@property (nonatomic, strong) NSArray<NSDictionary *> *tags;
-@property (nonatomic, assign) BOOL presentedModally;
-@property (nonatomic, assign) BOOL changed;
-@end
-
+// @interface 已在上方一级菜单前声明，这里只剩实现
 @implementation MTFSettingsViewController
 
 - (instancetype)init { return [super initWithStyle:UITableViewStyleInsetGrouped]; }
