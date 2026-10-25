@@ -409,9 +409,15 @@ static BOOL MTFIsFriend(id c){
 // 让用户一眼确认筛选到底有没有生效（点浮标打开设置面板）。
 - (void)refreshFilterBadge {
     if(![self isActive]){ [self removeFilterBadge]; return; }
-    NSArray *names=[self selectedNames];
-    NSString *label=names.count?[names componentsJoinedByString:@"、"]:@"";
-    if([self includeUntagged]) label=label.length?[label stringByAppendingString:@"、未标签"]:@"未标签";
+    // 多标签时全显会把浮标撑出屏幕、两侧裁掉后看起来只剩一个标签：
+    // 名字总长 ≤18 字全显；更长时显前两个 + 总数，保证多选状态一眼可见。
+    NSMutableArray *parts=[NSMutableArray arrayWithArray:[self selectedNames]];
+    if([self includeUntagged]) [parts addObject:@"未标签"];
+    NSString *joined=[parts componentsJoinedByString:@"、"];
+    NSString *label;
+    if(joined.length<=18) label=joined;
+    else if(parts.count>=2) label=[NSString stringWithFormat:@"%@、%@ 等共 %lu 个标签", parts[0], parts[1], (unsigned long)parts.count];
+    else label=joined;
     NSString *txt=[NSString stringWithFormat:@"  🏷 %@ · 匹配 %lu 条  ", label,(unsigned long)gMapCount()];
     if([txt isEqualToString:self.filterBadgeText] && self.filterBadge.superview && self.filterBadge.superview==self.activeMomentsVC.view) return;
     self.filterBadgeText=txt;
@@ -426,6 +432,8 @@ static BOOL MTFIsFriend(id c){
             b.textColor=[UIColor whiteColor];
             b.font=[UIFont systemFontOfSize:12];
             b.textAlignment=NSTextAlignmentCenter;
+            b.numberOfLines=1;
+            b.lineBreakMode=NSLineBreakByTruncatingTail;
             b.layer.cornerRadius=13; b.layer.masksToBounds=YES;
             b.userInteractionEnabled=YES;
             [b addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(filterBadgeTapped)]];
@@ -435,6 +443,9 @@ static BOOL MTFIsFriend(id c){
         b.text=self.filterBadgeText;
         [b sizeToFit];
         CGRect f=b.frame; f.size.height=26; f.size.width+=10;
+        // 浮标宽度封顶（屏宽-32），超了尾部截断，杜绝撑出屏幕后两侧被裁、看着只剩一个标签
+        CGFloat maxW=vc.view.bounds.size.width-32;
+        if(f.size.width>maxW) f.size.width=maxW;
         f.origin.x=(vc.view.bounds.size.width-f.size.width)/2;
         f.origin.y=vc.view.bounds.size.height-f.size.height-30;
         b.frame=f;
@@ -830,7 +841,7 @@ static void MTFRebuildMapIfNeeded(WCFacade *self, unsigned long long origCount){
 static NSString *MTFBuildDiagnostics(void){
     MTFManager *m=[MTFManager shared];
     NSMutableString *r=[NSMutableString string];
-    [r appendString:@"MomentsTagFilter 诊断 (v1.7.3)\n"];
+    [r appendString:@"MomentsTagFilter 诊断 (v1.7.4)\n"];
     [r appendFormat:@"开关: %@  已选标签: %@  含未标签: %@\n",
         [m enabled]?@"开":@"关",
         [m selectedNames].count?[[m selectedNames] componentsJoinedByString:@", "]:@"(无)",
@@ -975,7 +986,9 @@ static void MTFPresentSettings(UIViewController *host) {
     [MTFManager shared].activeMomentsVC=self;
     MTFAttachLongPress(self);
     [[MTFManager shared] refreshFilterBadge];
-    if([[MTFManager shared] isActive]) [[MTFManager shared] startFillBecause:@"moments-appear"];
+    // 不在这里自动补拉：从好友个人页返回时也会走到 viewDidAppear，
+    // 每次都转圈正是用户投诉的点。补拉只在筛选设置变更关闭时触发（settings-closed），
+    // 下滑/上拉刷新走宿主自身分页，投影经 hook 重建，不需要额外转圈。
 }
 
 - (void)viewDidLayoutSubviews {
@@ -1003,7 +1016,7 @@ static void MTFRegisterIntoPluginsMgr(void){
     @try {
         WCPluginsMgr *mgr=[cls sharedInstance]; BOOL exists=NO;
         @try { for(id p in [mgr plugins]){ NSString *tt=nil; @try{ tt=[p valueForKey:@"title"]; }@catch(__unused id e){} if([tt isEqualToString:@"朋友圈标签筛选"]){ exists=YES; break; } } } @catch(__unused id e){}
-        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.7.3" controller:@"MTFSettingsViewController"];
+        if(!exists) [mgr registerControllerWithTitle:@"朋友圈标签筛选" version:@"1.7.4" controller:@"MTFSettingsViewController"];
     } @catch(__unused id e){}
 }
 
