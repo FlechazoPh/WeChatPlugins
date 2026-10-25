@@ -1,6 +1,6 @@
 Package: com.rea.momentstagfilter
 Name: MomentsTagFilter
-Version: 1.9.0
+Version: 1.10.0
 Architecture: iphoneos-arm64e
 Description: 按好友标签分类筛选信息流。提供设置入口（启用开关 + 标签多选）与悬浮筛选入口。仅供个人学习与合法使用，使用者须遵守当地法律法规及相关用户协议。
 Maintainer: MomentsTagFilter contributors

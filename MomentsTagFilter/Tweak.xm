@@ -85,8 +85,8 @@
 #pragma mark - 常量
 
 // 版本号唯一来源（Tweak.xm 内三处共用；control 文件里的 Version 仍需手动同步）
-static NSString *const kMTFVersion        = @"1.9.0";
-static NSString *const kMTFChangelog = @"## v1.9.0（2026-10-25）\n\n- 不看某些标签：筛选页总开关下方加「只看这些 / 不看这些」切换；切到「不看这些」后，勾选的标签里的好友动态从信息流里去掉，其余人全部保留；「未设置标签的朋友」行在不看档同样可排除；两档勾选分开存，切档不丢另一档的选择；顶部副标题和一级菜单状态文案同步改成「🚫 不看 N 个标签 · 剩 M 条」；无勾选时不做任何过滤\n- 更新日志排版重写：v1.8.3 的 iOS 原生 markdown 解析在真机上整篇压成一段（换行、标题、列表全丢），改行级确定性渲染：版本标题 20pt 粗体 + 段间距、条目圆点 + 悬挂缩进、代码等宽、正文 16pt，换行显式拼进字符串，不再依赖解析器\n\n## v1.8.3（2026-10-25）\n\n- 更新日志改 markdown 渲染：之前是纯文本，`#`、反引号都原样显示；现在用 iOS 15 原生 markdown 解析渲染（标题加粗放大、列表圆点、代码等宽），老系统或解析失败时回退纯文本；页里不再放仓库的发版约定段落，只从版本小节开始\n\n## v1.8.2（2026-10-25）\n\n- 修排版错位：根因是末行分隔线用了 left=10000 的超大 inset 藏线，结果连带顶坏 cell 的布局边距，正文被推到屏外只剩尾字（总开关行、取消全选行、一级菜单两行全是末行，全中招）；现在末行不再特殊处理（分组表末行本来就不画分隔线），inset 另加 200 上限防御\n- 勾选改成 toggles：标签行的 ✓ 彻底拿掉，每行右侧换成苹果官方 UISwitch（与总开关同一组件），点行或拨开关都能切换\n\n## v1.8.1（2026-10-25）\n\n- 复刻系统 UI：v1.8.0 的 inset 分组在微信进程里丢了白卡（宿主改写了外观），现在每个 cell 自带白色圆角卡片背景（按首/末行切角），底部灰底、行间短分隔线与文字左对齐，不再依赖 tableView 自身的分组背景绘制\n- 版本行可点进：关于 → 版本点进去是更新日志页（内容与仓库 CHANGELOG.md 同步）\n- 长按门禁：朋友圈筛选总开关关闭后，朋友圈页长按头像不再进入功能；只有开启时才触发（要重新开启请走「我 → 插件」）\n- 勾选换成苹果官方图形：标签行的 ✓ 不再是字体字符，改成 SF Symbol checkmark（与系统 accessory 勾选同一个图形），蓝色随系统 tint\n\n## v1.8.0（2026-10-25）\n\n- 设置改成两级菜单：一级菜单是插件功能列表（目前只有「朋友圈筛选」一行，带蓝色标签图标和状态副文案「已开启 · 已选 N 个标签」/「已关闭」，点进去才是原来的开关 + 筛选列表二级菜单）；以后新增功能只在一级菜单加一行，结构不用再动\n- 全套换成 iOS 系统「设置」App 的原生样式：三级页面（功能列表、筛选页、成员名单）统一用 inset 分组列表（圆角卡片 + 灰底）、17pt 正文、灰色分组标题/脚注、蓝色操作行、标准 UISwitch 和系统勾选；图标是彩色圆角方块 + 白色 SF Symbol；不再引入任何第三方 UI 框架，UIKit 原生组件就是设置 App 自己用的那套\n- 入口统一进一级菜单：长按头像、我 → 插件都打开功能列表；顶部副标题是筛选快捷入口，直接落在筛选二级菜单，左上角返回可回一级菜单\n- 版本号改成代码内唯一常量，以后发版只改一处 + control 文件\n\n## v1.7.5（2026-10-25）\n\n- 底部浮标移到顶部：不再是底部黑色药丸，改成导航栏「朋友圈」标题正下方的 11pt 灰色副标题（🏷 标签 · 匹配 N 条），不遮挡内容；点副标题同样打开设置面板；离开信息流页（进好友个人页/设置页）时自动摘掉，返回时重新挂上（导航栏是各页面共用的，不摘会残留）\n- 多选后缀必显：之前多选时浮标只显前两个名字、「等共 N 个标签」时有时无；现在单标签显名字，多标签固定格式「首个 等共 N 个标签 · 匹配 N 条」，文案足够短、不会被截断，选 5 个就一定能看到「等共 5 个标签」\n\n## v1.7.4（2026-10-25）\n\n- 从好友个人页返回朋友圈不再自动转圈：删掉了信息流页每次出现都触发补拉的逻辑（之前只靠 3 秒冷却挡，返回稍久一点就重新转圈）；补拉只在筛选设置变更关闭时触发，下滑/上拉刷新走宿主自身分页\n- 多标签浮标显示优化：之前名字全拼在一起、浮标被撑出屏幕后两侧裁掉，看着只剩一个标签；现在名字总长 ≤18 字全显，更长时显前两个 +「等共 N 个标签」，且浮标宽度封顶屏宽-32、超了尾部截断\n\n## v1.7.3（2026-10-25）\n\n- 放慢补拉，看窗口能延多远：补拉检查间隔 1.5 秒 → 3 秒（降请求频率），单次上限 40 页 → 150 页，目标匹配 10 条 → 50 条；仍以服务器 noMore 为准，补拉时间会变长（约 32 页需 1 分半左右）\n- 其余与 v1.7.2 相同（无 CGI 拉取）\n\n## v1.7.2（2026-10-25）\n\n- 回滚：取消 CGI 拉取，代码还原到 v1.4.2（最后一个经真机验证不闪退的版本）。v1.6.0/v1.7.0/v1.7.1 的 CGI 拉取在真机上连续闪退，堆拷贝也没修好，不再继续猜\n- 恢复的功能：设置页全屏、成员名单（点成员跳原生个人页）、主页筛选投影 + 筛选状态浮标；筛选仍只覆盖主页时间线窗口内的动态，旧动态请点成员进个人页看\n\n## v1.7.1（2026-10-25）\n\n- 修勾选标签闪退：CGI 完成回调改显式堆拷贝再传给原生桥。v1.6.0/v1.7.0 两次闪退的共同点就是这条 CGI 调用，首要嫌疑是栈 block 以 id 形式经 objc_msgSend 传过去、桥接层若只存指针不拷贝，方法返回后回调即访野指针\n\n## v1.7.0（2026-10-25）\n\n- 去掉「聚合」按钮和聚合页：点聚合闪退，入口已删除\n- 改为筛选拉取：设置页勾选某个标签时，自动用 CGI 逐人拉取该组成员的个人页首页（串行、间隔 0.8 秒），按时间排成「筛选 · 标签名」一页；点行打开该成员个人页看全部。取消勾选时只关筛选、不拉取\n- 修 v1.6.0 的两个隐患：串行链改堆拷贝强自指（弱自指会让链在第一人后断掉）；联系人显示名解析全部回主线程（后台队列调联系人服务疑似闪退源之一）\n\n## v1.6.0（2026-10-24）\n\n- 聚合改为 CGI 直取：逐成员调用微信自己的首页接口（SnsDBManager 的 requestUserFirstPageAsync），串行、间隔 0.8 秒——相当于逐个打开个人页，不再只依赖本地缓存；结果与本地缓存合并、按时间倒序\n- 聚合页加逐人进度（已拉取 x/y 人 · 共 n 条），单个成员 8 秒无响应自动跳过，不卡住整页\n- 仍只拉每人首页；更早页的翻页后续再做\n\n## v1.5.0（2026-10-24）\n\n- 新增 B2 聚合动态：设置页每个标签行加「聚合 ›」按钮，把该标签成员在本地已缓存的朋友圈按时间倒序排成一页（每人最多 30 条、总共最多 500 条），点任意一条打开该成员的个人页\n- 聚合只读本地缓存、不发新网络请求：已打开过个人页的成员会显示更早内容；还没缓存的旧动态，点成员名打开个人页看一次后，下次聚合里就会出现\n\n## v1.4.2（2026-10-24）\n\n- 设置面板改为全屏呈现，修复半屏弹窗顶部遮挡、成员名单滚动时被标题栏压住的问题\n- 成员名单只显示名字，去掉 wxid 副标题\n- 信息流页新增筛选状态浮标：筛选生效时在页面底部显示已选标签与当前匹配条数，点浮标打开设置——筛选有没有生效一目了然\n\n## v1.4.1（2026-10-23）\n\n- 修复成员名单显示 wxid 的问题：标签成员先经通讯录管理器解析成完整好友对象再展示，名单显示备注名/昵称（与通讯录标签页一致）\n- 修复点成员闪退：跳转个人朋友圈前改用解析后的完整好友对象，解析不到时改为弹提示、不再闪退\n- 诊断信息增加成员元素类型探针，便于确认成员数据的真实结构\n\n## v1.4.0（2026-10-23）\n\n- 新增「成员直达」：设置页每个标签（含「未设置标签的朋友」）行右侧加「成员 ›」按钮，打开成员名单（按名字排序），点任意成员直接跳微信原生个人朋友圈页——主页时间线约 4 天窗口之外的旧动态也能看了\n- 附诊断结论：筛选与匹配逻辑经真机数据验证正确（成员交集与投影条数一致）；个别标签刷不出是其成员在主页时间线窗口内没有新动态，并非插件故障\n\n## v1.3.3（2026-10-23）\n\n- 排查版：设置页底部新增「生成诊断信息」，可一键生成并复制排查报告（标签成员数与样本、成员集合缓存对比、已扫描条数与时间跨度、作者交集），用于定位个别标签筛不出数据的问题\n- 修复潜在冷启动竞态：标签服务未就绪时算出的空集合不再被缓存钉死，下次判定会自动重算\n\n## v1.3.2（2026-10-23）\n\n- 修复筛选后经常刷不出数据：自动补拉改为「进度驱动」——以底层实际拉到的数据量判断每页是否生效，成功页上限提高到 40 页；请求被微信合并/未生效时自动重试，不再固定拉 10 次就停\n- 加载提示实时显示进度「已扫描 X 条 · 匹配 Y 条」，可区分是还在拉取还是确实没有数据\n- 说明：朋友圈主页时间线本身有深度上限（由微信服务端决定），太久远的动态只能在好友个人主页看到，超出部分插件无法拉取\n\n## v1.3.1（2026-10-23）\n\n- 修复「未设置标签的朋友」人数严重偏大：改为直接基于通讯录好友（isMyContact）减去已打标签的人，不再全量扫描误计入非好友\n- 筛选命中改回「标签→成员」集合（人数已验证准确）并惰性计算，修复部分标签筛不出 / 冷启动空白\n- 筛选后显示「正在加载」转圈，并自动受控补拉更多页，尽量把所选标签好友的近期朋友圈拉出来\n- 安装包文件名精简为 `momentsfil_<版本>_<布局>.deb`\n\n## v1.3.0（2026-10-23）\n\n- 标签匹配改为按联系人标签逐一匹配，修复部分标签筛不出、冷启动空白的问题\n- 标签列表内嵌显示人数\n- 导航栏改为不透明样式\n- 修复「未设置标签的朋友」人数统计\n- 补声明 getLabelsNameForContact: 接口\n\n## v1.1.1（2026-10-23）\n\n- 首个开源版本：朋友圈按好友标签分类筛选\n- 设置入口注册到「第三方插件管理」：启用开关 + 好友标签多选\n- 朋友圈页筛选入口（启用后显示）\n- 过滤采用非破坏性投影：只保留作者属于所选标签成员的条目，不改动宿主渲染流程";
+static NSString *const kMTFVersion        = @"1.10.0";
+static NSString *const kMTFChangelog = @"## v1.10.0（2026-10-25）\n\n- 筛选列表改成微信通讯录标签页样式：左侧圆圈勾选（选中微信绿实心 + 白勾、未选灰色空心，点行切换），标题「标签名 (人数)」，副标题前 8 个成员的备注/昵称（多于 8 人尾部加 …），右侧 … 按钮进成员页；行 toggles 拿掉（总开关仍是 UISwitch）\n- 成员页改用微信原生页：点 … 打开微信自己的标签成员页（搜索栏 + 右侧 A-Z 索引 + 头像 + 备注/昵称 + 底部添加/移出，标题「标签名 (人数)」）；原生页不可用时回退自带名单；「未设置标签的朋友」不是标签、没有原生页，沿用自带名单；从原生页返回后副标题与人数重算（增删成员后不显示旧数据）\n\n## v1.9.0（2026-10-25）\n\n- 不看某些标签：筛选页总开关下方加「只看这些 / 不看这些」切换；切到「不看这些」后，勾选的标签里的好友动态从信息流里去掉，其余人全部保留；「未设置标签的朋友」行在不看档同样可排除；两档勾选分开存，切档不丢另一档的选择；顶部副标题和一级菜单状态文案同步改成「🚫 不看 N 个标签 · 剩 M 条」；无勾选时不做任何过滤\n- 更新日志排版重写：v1.8.3 的 iOS 原生 markdown 解析在真机上整篇压成一段（换行、标题、列表全丢），改行级确定性渲染：版本标题 20pt 粗体 + 段间距、条目圆点 + 悬挂缩进、代码等宽、正文 16pt，换行显式拼进字符串，不再依赖解析器\n\n## v1.8.3（2026-10-25）\n\n- 更新日志改 markdown 渲染：之前是纯文本，`#`、反引号都原样显示；现在用 iOS 15 原生 markdown 解析渲染（标题加粗放大、列表圆点、代码等宽），老系统或解析失败时回退纯文本；页里不再放仓库的发版约定段落，只从版本小节开始\n\n## v1.8.2（2026-10-25）\n\n- 修排版错位：根因是末行分隔线用了 left=10000 的超大 inset 藏线，结果连带顶坏 cell 的布局边距，正文被推到屏外只剩尾字（总开关行、取消全选行、一级菜单两行全是末行，全中招）；现在末行不再特殊处理（分组表末行本来就不画分隔线），inset 另加 200 上限防御\n- 勾选改成 toggles：标签行的 ✓ 彻底拿掉，每行右侧换成苹果官方 UISwitch（与总开关同一组件），点行或拨开关都能切换\n\n## v1.8.1（2026-10-25）\n\n- 复刻系统 UI：v1.8.0 的 inset 分组在微信进程里丢了白卡（宿主改写了外观），现在每个 cell 自带白色圆角卡片背景（按首/末行切角），底部灰底、行间短分隔线与文字左对齐，不再依赖 tableView 自身的分组背景绘制\n- 版本行可点进：关于 → 版本点进去是更新日志页（内容与仓库 CHANGELOG.md 同步）\n- 长按门禁：朋友圈筛选总开关关闭后，朋友圈页长按头像不再进入功能；只有开启时才触发（要重新开启请走「我 → 插件」）\n- 勾选换成苹果官方图形：标签行的 ✓ 不再是字体字符，改成 SF Symbol checkmark（与系统 accessory 勾选同一个图形），蓝色随系统 tint\n\n## v1.8.0（2026-10-25）\n\n- 设置改成两级菜单：一级菜单是插件功能列表（目前只有「朋友圈筛选」一行，带蓝色标签图标和状态副文案「已开启 · 已选 N 个标签」/「已关闭」，点进去才是原来的开关 + 筛选列表二级菜单）；以后新增功能只在一级菜单加一行，结构不用再动\n- 全套换成 iOS 系统「设置」App 的原生样式：三级页面（功能列表、筛选页、成员名单）统一用 inset 分组列表（圆角卡片 + 灰底）、17pt 正文、灰色分组标题/脚注、蓝色操作行、标准 UISwitch 和系统勾选；图标是彩色圆角方块 + 白色 SF Symbol；不再引入任何第三方 UI 框架，UIKit 原生组件就是设置 App 自己用的那套\n- 入口统一进一级菜单：长按头像、我 → 插件都打开功能列表；顶部副标题是筛选快捷入口，直接落在筛选二级菜单，左上角返回可回一级菜单\n- 版本号改成代码内唯一常量，以后发版只改一处 + control 文件\n\n## v1.7.5（2026-10-25）\n\n- 底部浮标移到顶部：不再是底部黑色药丸，改成导航栏「朋友圈」标题正下方的 11pt 灰色副标题（🏷 标签 · 匹配 N 条），不遮挡内容；点副标题同样打开设置面板；离开信息流页（进好友个人页/设置页）时自动摘掉，返回时重新挂上（导航栏是各页面共用的，不摘会残留）\n- 多选后缀必显：之前多选时浮标只显前两个名字、「等共 N 个标签」时有时无；现在单标签显名字，多标签固定格式「首个 等共 N 个标签 · 匹配 N 条」，文案足够短、不会被截断，选 5 个就一定能看到「等共 5 个标签」\n\n## v1.7.4（2026-10-25）\n\n- 从好友个人页返回朋友圈不再自动转圈：删掉了信息流页每次出现都触发补拉的逻辑（之前只靠 3 秒冷却挡，返回稍久一点就重新转圈）；补拉只在筛选设置变更关闭时触发，下滑/上拉刷新走宿主自身分页\n- 多标签浮标显示优化：之前名字全拼在一起、浮标被撑出屏幕后两侧裁掉，看着只剩一个标签；现在名字总长 ≤18 字全显，更长时显前两个 +「等共 N 个标签」，且浮标宽度封顶屏宽-32、超了尾部截断\n\n## v1.7.3（2026-10-25）\n\n- 放慢补拉，看窗口能延多远：补拉检查间隔 1.5 秒 → 3 秒（降请求频率），单次上限 40 页 → 150 页，目标匹配 10 条 → 50 条；仍以服务器 noMore 为准，补拉时间会变长（约 32 页需 1 分半左右）\n- 其余与 v1.7.2 相同（无 CGI 拉取）\n\n## v1.7.2（2026-10-25）\n\n- 回滚：取消 CGI 拉取，代码还原到 v1.4.2（最后一个经真机验证不闪退的版本）。v1.6.0/v1.7.0/v1.7.1 的 CGI 拉取在真机上连续闪退，堆拷贝也没修好，不再继续猜\n- 恢复的功能：设置页全屏、成员名单（点成员跳原生个人页）、主页筛选投影 + 筛选状态浮标；筛选仍只覆盖主页时间线窗口内的动态，旧动态请点成员进个人页看\n\n## v1.7.1（2026-10-25）\n\n- 修勾选标签闪退：CGI 完成回调改显式堆拷贝再传给原生桥。v1.6.0/v1.7.0 两次闪退的共同点就是这条 CGI 调用，首要嫌疑是栈 block 以 id 形式经 objc_msgSend 传过去、桥接层若只存指针不拷贝，方法返回后回调即访野指针\n\n## v1.7.0（2026-10-25）\n\n- 去掉「聚合」按钮和聚合页：点聚合闪退，入口已删除\n- 改为筛选拉取：设置页勾选某个标签时，自动用 CGI 逐人拉取该组成员的个人页首页（串行、间隔 0.8 秒），按时间排成「筛选 · 标签名」一页；点行打开该成员个人页看全部。取消勾选时只关筛选、不拉取\n- 修 v1.6.0 的两个隐患：串行链改堆拷贝强自指（弱自指会让链在第一人后断掉）；联系人显示名解析全部回主线程（后台队列调联系人服务疑似闪退源之一）\n\n## v1.6.0（2026-10-24）\n\n- 聚合改为 CGI 直取：逐成员调用微信自己的首页接口（SnsDBManager 的 requestUserFirstPageAsync），串行、间隔 0.8 秒——相当于逐个打开个人页，不再只依赖本地缓存；结果与本地缓存合并、按时间倒序\n- 聚合页加逐人进度（已拉取 x/y 人 · 共 n 条），单个成员 8 秒无响应自动跳过，不卡住整页\n- 仍只拉每人首页；更早页的翻页后续再做\n\n## v1.5.0（2026-10-24）\n\n- 新增 B2 聚合动态：设置页每个标签行加「聚合 ›」按钮，把该标签成员在本地已缓存的朋友圈按时间倒序排成一页（每人最多 30 条、总共最多 500 条），点任意一条打开该成员的个人页\n- 聚合只读本地缓存、不发新网络请求：已打开过个人页的成员会显示更早内容；还没缓存的旧动态，点成员名打开个人页看一次后，下次聚合里就会出现\n\n## v1.4.2（2026-10-24）\n\n- 设置面板改为全屏呈现，修复半屏弹窗顶部遮挡、成员名单滚动时被标题栏压住的问题\n- 成员名单只显示名字，去掉 wxid 副标题\n- 信息流页新增筛选状态浮标：筛选生效时在页面底部显示已选标签与当前匹配条数，点浮标打开设置——筛选有没有生效一目了然\n\n## v1.4.1（2026-10-23）\n\n- 修复成员名单显示 wxid 的问题：标签成员先经通讯录管理器解析成完整好友对象再展示，名单显示备注名/昵称（与通讯录标签页一致）\n- 修复点成员闪退：跳转个人朋友圈前改用解析后的完整好友对象，解析不到时改为弹提示、不再闪退\n- 诊断信息增加成员元素类型探针，便于确认成员数据的真实结构\n\n## v1.4.0（2026-10-23）\n\n- 新增「成员直达」：设置页每个标签（含「未设置标签的朋友」）行右侧加「成员 ›」按钮，打开成员名单（按名字排序），点任意成员直接跳微信原生个人朋友圈页——主页时间线约 4 天窗口之外的旧动态也能看了\n- 附诊断结论：筛选与匹配逻辑经真机数据验证正确（成员交集与投影条数一致）；个别标签刷不出是其成员在主页时间线窗口内没有新动态，并非插件故障\n\n## v1.3.3（2026-10-23）\n\n- 排查版：设置页底部新增「生成诊断信息」，可一键生成并复制排查报告（标签成员数与样本、成员集合缓存对比、已扫描条数与时间跨度、作者交集），用于定位个别标签筛不出数据的问题\n- 修复潜在冷启动竞态：标签服务未就绪时算出的空集合不再被缓存钉死，下次判定会自动重算\n\n## v1.3.2（2026-10-23）\n\n- 修复筛选后经常刷不出数据：自动补拉改为「进度驱动」——以底层实际拉到的数据量判断每页是否生效，成功页上限提高到 40 页；请求被微信合并/未生效时自动重试，不再固定拉 10 次就停\n- 加载提示实时显示进度「已扫描 X 条 · 匹配 Y 条」，可区分是还在拉取还是确实没有数据\n- 说明：朋友圈主页时间线本身有深度上限（由微信服务端决定），太久远的动态只能在好友个人主页看到，超出部分插件无法拉取\n\n## v1.3.1（2026-10-23）\n\n- 修复「未设置标签的朋友」人数严重偏大：改为直接基于通讯录好友（isMyContact）减去已打标签的人，不再全量扫描误计入非好友\n- 筛选命中改回「标签→成员」集合（人数已验证准确）并惰性计算，修复部分标签筛不出 / 冷启动空白\n- 筛选后显示「正在加载」转圈，并自动受控补拉更多页，尽量把所选标签好友的近期朋友圈拉出来\n- 安装包文件名精简为 `momentsfil_<版本>_<布局>.deb`\n\n## v1.3.0（2026-10-23）\n\n- 标签匹配改为按联系人标签逐一匹配，修复部分标签筛不出、冷启动空白的问题\n- 标签列表内嵌显示人数\n- 导航栏改为不透明样式\n- 修复「未设置标签的朋友」人数统计\n- 补声明 getLabelsNameForContact: 接口\n\n## v1.1.1（2026-10-23）\n\n- 首个开源版本：朋友圈按好友标签分类筛选\n- 设置入口注册到「第三方插件管理」：启用开关 + 好友标签多选\n- 朋友圈页筛选入口（启用后显示）\n- 过滤采用非破坏性投影：只保留作者属于所选标签成员的条目，不改动宿主渲染流程";
 static NSString *const kMTFEnabled        = @"MTFEnabled";
 static NSString *const kMTFSelectedNames  = @"MTFSelectedTagNames";
 static NSString *const kMTFIncludeUntagged= @"MTFIncludeUntagged";
@@ -857,6 +857,52 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
     return s;
 }
 
+// 微信通讯录标签页样式的圆圈勾选（28pt）：选中=微信绿 #07C160 实心 + 白 ✓；未选=灰色空心
+static UIImage *MTFCircleCheck(BOOL on){
+    CGFloat d=28;
+    UIGraphicsImageRendererFormat *fmt=[UIGraphicsImageRendererFormat defaultFormat];
+    fmt.opaque=NO;
+    UIGraphicsImageRenderer *r=[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(d,d) format:fmt];
+    return [r imageWithActions:^(UIGraphicsImageRendererContext *ctx){
+        (void)ctx;
+        CGRect rect=CGRectMake(1,1,d-2,d-2);
+        if(on){
+            [[UIColor colorWithRed:0x07/255.0 green:0xC1/255.0 blue:0x60/255.0 alpha:1] setFill];
+            [[UIBezierPath bezierPathWithOvalInRect:rect] fill];
+            UIBezierPath *tick=[UIBezierPath bezierPath];
+            tick.lineWidth=2.2; tick.lineCapStyle=kCGLineCapRound; tick.lineJoinStyle=kCGLineJoinRound;
+            [tick moveToPoint:CGPointMake(7.5,14.5)];
+            [tick addLineToPoint:CGPointMake(12.5,19.5)];
+            [tick addLineToPoint:CGPointMake(21,9.5)];
+            [[UIColor whiteColor] setStroke];
+            [tick stroke];
+        } else {
+            [[UIColor colorWithWhite:0.78 alpha:1] setStroke];
+            UIBezierPath *circle=[UIBezierPath bezierPathWithOvalInRect:rect];
+            circle.lineWidth=1.5;
+            [circle stroke];
+        }
+    }];
+}
+// 微信标签页右侧 … 按钮（28pt）：灰色圆圈描边 + 三个点
+static UIImage *MTFDotsImage(void){
+    CGFloat d=28;
+    UIGraphicsImageRendererFormat *fmt=[UIGraphicsImageRendererFormat defaultFormat];
+    fmt.opaque=NO;
+    UIGraphicsImageRenderer *r=[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(d,d) format:fmt];
+    return [r imageWithActions:^(UIGraphicsImageRendererContext *ctx){
+        (void)ctx;
+        CGRect rect=CGRectMake(1,1,d-2,d-2);
+        [[UIColor colorWithWhite:0.78 alpha:1] setStroke];
+        UIBezierPath *circle=[UIBezierPath bezierPathWithOvalInRect:rect];
+        circle.lineWidth=1.5;
+        [circle stroke];
+        [[UIColor colorWithWhite:0.55 alpha:1] setFill];
+        for(int i=0;i<3;i++)
+            [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(8+i*5.5,13,2.5,2.5)] fill];
+    }];
+}
+
 #pragma mark - 一级菜单：插件功能列表（以后新增功能只在这里加一行）
 
 // 二级菜单的接口提前声明（实现仍在下方）：一级菜单要 alloc 它并设属性，
@@ -865,6 +911,7 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
 @property (nonatomic, strong) NSArray<NSDictionary *> *tags;
 @property (nonatomic, assign) BOOL presentedModally;
 @property (nonatomic, assign) BOOL changed;
+@property (nonatomic, strong) NSMutableDictionary *subtitleCache; // 行 -> 前 8 个成员名副标题（每进页面重算）
 @end
 
 @interface MTFRootViewController : UITableViewController
@@ -968,6 +1015,9 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     self.tags=[[MTFManager shared] orderedTags];
+    // 原生成员页可能增删过成员：副标题与人数缓存清掉重算，否则返回后显示旧数据
+    self.subtitleCache=nil;
+    [MTFManager shared].countCache=[NSMutableDictionary dictionary];
     [self.tableView reloadData];
     // 异步算无标签好友人数，算好后刷新该行
     [[MTFManager shared] computeUntaggedAsyncThen:^{ [self.tableView reloadData]; }];
@@ -991,6 +1041,7 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
 }
 - (CGFloat)tableView:(UITableView *)t heightForRowAtIndexPath:(NSIndexPath *)ip {
     if(ip.section==0 && ip.row==1) return 56; // 筛选方式分段控件行
+    if(ip.section==2) return 64; // 两行标签行：标题 + 成员名副标题
     return UITableViewAutomaticDimension;
 }
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s {
@@ -1004,31 +1055,43 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
     if(s==2){
         if(self.tags.count==0) return @"未读取到好友标签。请先在「通讯录 → 标签」中创建标签并添加好友。";
         if([[MTFManager shared] filterMode]==1)
-            return @"拨动标签行右侧的开关选择不看（点行同样切换）；点「成员」打开成员名单。被排除标签里的好友动态将从信息流里去掉，其余人不变。";
-        return @"拨动标签行右侧的开关选择筛选（点行同样切换）；点「成员」打开成员名单，点成员跳到他的个人朋友圈——主页时间线窗口之外的旧动态从那里看。";
+            return @"点行左侧圆圈选择不看（点行同样切换）；点右侧 … 打开微信原生标签成员页（头像 + 字母索引）。被排除标签里的好友动态将从信息流里去掉，其余人不变。";
+        return @"点行左侧圆圈选择筛选（点行同样切换）；点右侧 … 打开微信原生标签成员页（头像 + 字母索引）。";
     }
     return nil;
 }
 
-// 行右侧配件：苹果官方 toggles（UISwitch，与总开关同一组件）+ 「成员 ›」按钮。
-// 勾选不再用 ✓（字体字符或 SF 图形都不符合用户要的 toggles 样式）。
-// 布局：成员 62 + 间隙 8 + 开关 51 = 121 宽；点行同样切换（didSelectRow），点开关直接切换，
-// 两路都不重复触发（点开关不会触发行选中，开关动作按绝对状态写，不取反）。
-- (UIView *)accessoryForRow:(NSInteger)row selected:(BOOL)on {
-    UIView *box=[[UIView alloc] initWithFrame:CGRectMake(0,0,121,31)];
-    UIButton *btn=[UIButton buttonWithType:UIButtonTypeSystem];
-    btn.frame=CGRectMake(0,0,62,31);
-    btn.titleLabel.font=[UIFont systemFontOfSize:17]; // 与正文同字号，整表统一
-    [btn setTitle:@"成员 ›" forState:UIControlStateNormal];
+// 标签行右侧 … 按钮（微信标签页样式）：点它进成员页；行本身点按=勾选圆圈（didSelectRow）。
+// v1.10.0 起行勾选不再用 UISwitch，改回微信原生圆圈（图一的样式）。
+- (UIButton *)dotsButtonForRow:(NSInteger)row {
+    UIButton *btn=[UIButton buttonWithType:UIButtonTypeCustom];
+    btn.frame=CGRectMake(0,0,28,28);
+    [btn setImage:MTFDotsImage() forState:UIControlStateNormal];
     btn.tag=row;
     [btn addTarget:self action:@selector(openMembers:) forControlEvents:UIControlEventTouchUpInside];
-    [box addSubview:btn];
-    UISwitch *sw=[[UISwitch alloc] initWithFrame:CGRectMake(70,0,51,31)];
-    sw.on=on;
-    sw.tag=row;
-    [sw addTarget:self action:@selector(toggleTag:) forControlEvents:UIControlEventValueChanged];
-    [box addSubview:sw];
-    return box;
+    return btn;
+}
+
+// 副标题：前 8 个成员的备注/昵称，用 ", " 连接；成员多于 8 人时尾部加 ", …"。
+// 每进一次页面算一遍并缓存（原生成员页可能增删成员，viewWillAppear 会清缓存重算）。
+- (NSString *)subtitleForRow:(NSInteger)row {
+    if(!self.subtitleCache) self.subtitleCache=[NSMutableDictionary dictionary];
+    NSString *key = row==0 ? @"__untagged" : self.tags[row-1][@"name"];
+    NSString *cached=self.subtitleCache[key];
+    if(cached) return cached;
+    MTFManager *m=[MTFManager shared];
+    NSArray *contacts = row==0 ? [m untaggedContacts] : [m contactsForTagName:key];
+    NSMutableArray *names=[NSMutableArray array];
+    for(id c in contacts){
+        NSString *n=MTFDisplayNameOfContact(c);
+        if(!n.length) n=MTFUsernameOfMember(c);
+        if(n.length) [names addObject:n];
+        if(names.count>=8) break;
+    }
+    NSString *sub=[names componentsJoinedByString:@", "];
+    if(sub.length && contacts.count>8) sub=[sub stringByAppendingString:@", …"];
+    self.subtitleCache[key]=sub;
+    return sub;
 }
 
 - (void)changeFilterMode:(UISegmentedControl *)seg {
@@ -1038,34 +1101,52 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
     [self.tableView reloadData]; // 列表行要换成新档位的勾选状态，标题/脚注也要换
 }
 
-- (void)toggleTag:(UISwitch *)sw {
-    MTFManager *m=[MTFManager shared];
-    NSInteger row=sw.tag;
-    if(row==0){ [m setUntagged:sw.on]; }
-    else {
-        if(row-1>=(NSInteger)self.tags.count) return;
-        NSString *name=self.tags[row-1][@"name"];
-        [m setName:name selected:sw.on];
-    }
-    self.changed=YES; [m applyFilterChanged];
-    // 不整表刷新：开关本身已是目标状态，刷新只会让它闪一下
+- (void)pushVC:(UIViewController *)vc {
+    if(self.navigationController) [self.navigationController pushViewController:vc animated:YES];
+    else [self presentViewController:[[UINavigationController alloc] initWithRootViewController:vc] animated:YES completion:nil];
 }
 
 - (void)openMembers:(UIButton *)btn {
     NSInteger row=btn.tag;
     MTFManager *m=[MTFManager shared];
-    MTFMemberListViewController *vc=[MTFMemberListViewController new];
-    if(row==0){
+    if(row==0){ // 未设置标签的朋友不是一个标签，没有原生标签页，沿用自带名单
+        MTFMemberListViewController *vc=[MTFMemberListViewController new];
         vc.title=@"未设置标签的朋友";
         vc.contacts=[m untaggedContacts];
-    } else {
-        if(row-1>=(NSInteger)self.tags.count) return;
-        NSString *name=self.tags[row-1][@"name"];
-        vc.title=name;
-        vc.contacts=[m contactsForTagName:name];
+        [self pushVC:vc];
+        return;
     }
-    if(self.navigationController) [self.navigationController pushViewController:vc animated:YES];
-    else [self presentViewController:[[UINavigationController alloc] initWithRootViewController:vc] animated:YES completion:nil];
+    if(row-1>=(NSInteger)self.tags.count) return;
+    NSDictionary *tag=self.tags[row-1];
+    NSString *name=tag[@"name"];
+    // 优先用微信原生标签成员页（ContactTagNewDetailViewController：搜索栏 + A-Z 索引 + 头像行 + 添加/移出底栏）。
+    // 数据模型就是原生的 ContactTagData（父类 ContactTagItem：ID + 名）+ 成员用户名列表。
+    UIViewController *nativeVC=nil;
+    @try {
+        Class dataCls=objc_getClass("ContactTagData");
+        Class vcCls=objc_getClass("ContactTagNewDetailViewController");
+        if(dataCls && vcCls){
+            id data=[[dataCls alloc] init];
+            if([data respondsToSelector:@selector(setM_nsName:)]) [data setM_nsName:name];
+            id tid=tag[@"id"];
+            if([data respondsToSelector:@selector(setM_uiID:)] && [tid respondsToSelector:@selector(unsignedIntValue)])
+                ((void(*)(id,SEL,unsigned int))objc_msgSend)(data, @selector(setM_uiID:), [tid unsignedIntValue]);
+            NSArray *contacts=[m contactsForTagName:name];
+            NSMutableArray *usernames=[NSMutableArray array];
+            for(id c in contacts){ NSString *u=MTFUsernameOfMember(c); if(u.length) [usernames addObject:u]; }
+            if([data respondsToSelector:@selector(setM_arrContactNameList:)]) [data setM_arrContactNameList:usernames];
+            nativeVC=[[vcCls alloc] initViewControllerWithContactTagData:data];
+            // 标题兜底：原生页应自带「名 (人数)」；若数据驱动标题失效，这里先给一个
+            if([nativeVC isKindOfClass:[UIViewController class]] && !((UIViewController *)nativeVC).title.length)
+                ((UIViewController *)nativeVC).title=[NSString stringWithFormat:@"%@ (%lu)", name, (unsigned long)usernames.count];
+        }
+    } @catch(__unused id e){ nativeVC=nil; }
+    if(nativeVC){ [self pushVC:nativeVC]; return; }
+    // 原生页不可用时回退自带名单（点成员仍可跳个人朋友圈）
+    MTFMemberListViewController *vc=[MTFMemberListViewController new];
+    vc.title=name;
+    vc.contacts=[m contactsForTagName:name];
+    [self pushVC:vc];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip {
@@ -1101,18 +1182,27 @@ static NSAttributedString *MTFNameCount(NSString *name, NSInteger cnt){
         c.textLabel.text=@"生成诊断信息";
         return c;
     }
-    // 每次新建，避免复用导致的文字错位；人数紧贴名字后、灰色括号，如「摄影师 (71)」
-    UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    // 微信通讯录标签页样式：左侧圆圈勾选 + 两行（名 (人数) / 前 8 个成员名）+ 右侧 … 进成员页。
+    // 每次新建，避免复用导致的文字错位；人数紧贴名字后、灰色括号，如「摄影师 (71)」。
+    // 卡片样式（MTFStyleCardCell）早已预留 imageView 的分隔线位置，两行 cell 直接可用。
+    UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+    c.detailTextLabel.font=[UIFont systemFontOfSize:14];
+    c.detailTextLabel.textColor=[UIColor grayColor];
+    c.detailTextLabel.numberOfLines=1;
+    c.detailTextLabel.lineBreakMode=NSLineBreakByTruncatingTail;
     if(ip.row==0){ // 未设置标签的朋友
         c.textLabel.attributedText=MTFNameCount(@"未设置标签的朋友",[m untaggedCount]);
-        c.accessoryView=[self accessoryForRow:0 selected:[m untaggedSelected]];
+        c.detailTextLabel.text=[self subtitleForRow:0];
+        c.imageView.image=MTFCircleCheck([m untaggedSelected]);
+        c.accessoryView=[self dotsButtonForRow:0];
         return c;
     }
     NSDictionary *tag=self.tags[ip.row-1];
     NSString *name=tag[@"name"];
     c.textLabel.attributedText=MTFNameCount(name,[m memberCountForTag:tag]);
-    BOOL on=[m isTagSelected:name];
-    c.accessoryView=[self accessoryForRow:ip.row selected:on];
+    c.detailTextLabel.text=[self subtitleForRow:ip.row];
+    c.imageView.image=MTFCircleCheck([m isTagSelected:name]);
+    c.accessoryView=[self dotsButtonForRow:ip.row];
     return c;
 }
 
