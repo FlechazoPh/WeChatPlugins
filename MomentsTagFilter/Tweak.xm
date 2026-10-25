@@ -712,13 +712,25 @@ static void MTFDebugRecordPage(UIViewController *vc){
             if(ivars) free(ivars);
             if(e.length>3000) break;
         }
+        // v4：定向取赞赏 payload（WCPayQRCodeRewardControlData 的 _scanUrl 就是扫码解出的串）
+        @try {
+            id mdata=[vc valueForKey:@"m_data"];
+            id qrdata=[mdata valueForKey:@"_qrcodeRewardData"];
+            NSString *scanUrl=[qrdata valueForKey:@"scanUrl"];
+            NSString *srcUrl=[qrdata valueForKey:@"sourceWebViewUrl"];
+            id recv=[qrdata valueForKey:@"receiverContact"];
+            NSString *recvUsr=[recv valueForKey:@"m_nsUsrName"];
+            if(scanUrl.length) [e appendFormat:@"  SCANURL = %@\n", scanUrl];
+            if(srcUrl.length) [e appendFormat:@"  SRCURL = %@\n", srcUrl];
+            if(recvUsr.length) [e appendFormat:@"  RECEIVER = %@\n", recvUsr];
+        } @catch(__unused id ex3){}
         [gMTFPageLog addObject:e];
         while(gMTFPageLog.count>40) [gMTFPageLog removeObjectAtIndex:0];
     } @catch(__unused id ex){}
 }
 static NSString *MTFDebugPageLogText(void){
     if(!gMTFPageLog.count) return @"暂无记录。直接扫一次赞赏码，然后回到这里查看（v3 只深挖赞赏页）。";
-    return [@"页面记录 v3（仅赞赏页深挖，其他页面只记类名；找 WCPayQRCodeRewardPayerDetailViewController 那条）：\n\n" stringByAppendingString:[gMTFPageLog componentsJoinedByString:@"\n"]];
+    return [@"页面记录 v4（找 WCPayQRCodeRewardPayerDetailViewController 那条里的 SCANURL）：\n\n" stringByAppendingString:[gMTFPageLog componentsJoinedByString:@"\n"]];
 }
 
 %hook UIViewController
