@@ -111,6 +111,9 @@ static NSString *MTFAuthorOfItem(id item) {
 static NSUInteger gMapCount(void);
 // 诊断报告（实现见下方 hook 区，需要直接读 facade 原始条目）
 static NSString *MTFBuildDiagnostics(void);
+// 设置 UI 助手（定义在下方设置区；成员名单页在它之前，先前向声明）
+static UIImage *MTFSettingsIcon(NSString *symbolName, UIColor *bg);
+static void MTFApplySettingsNavAppearance(UINavigationBar *bar);
 // 设置面板呈现（实现见下方长按入口区）
 static void MTFPresentSettings(UIViewController *host);
 // 副标题快捷入口：直接落在二级菜单（左上角返回可回一级菜单）
