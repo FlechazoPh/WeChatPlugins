@@ -631,6 +631,53 @@ static BOOL MTFIsFriend(id c){
 
 @end
 
+#pragma mark - DEBUG 分支专用：页面出现记录（勿合入 main）
+// 记录每个微信原生页面出现时的类名 + 字符串/链接型 ivar（文章页 URL 里含 __biz、赞赏页参数都在这类 ivar 里）。
+// 只存本机诊断页，不上传任何东西；装回正式版即消失。
+static NSMutableArray<NSString *> *gMTFPageLog = nil;
+static void MTFDebugRecordPage(UIViewController *vc){
+    @try {
+        if(!gMTFPageLog) gMTFPageLog=[NSMutableArray array];
+        NSString *cls=NSStringFromClass([vc class]);
+        if([cls hasPrefix:@"UI"] || [cls hasPrefix:@"MTF"]) return;
+        NSMutableString *e=[NSMutableString stringWithFormat:@"[%@] %@\n", [NSDate date], cls];
+        unsigned int shown=0;
+        for(Class c=[vc class]; c && c!=[UIViewController class] && shown<50; c=class_getSuperclass(c)){
+            unsigned int n=0;
+            Ivar *ivars=class_copyIvarList(c, &n);
+            for(unsigned int i=0;i<n && shown<50;i++){
+                const char *tn=ivar_getTypeEncoding(ivars[i]);
+                if(!tn || tn[0]!='@') continue;
+                const char *nm=ivar_getName(ivars[i]);
+                if(!nm) continue;
+                id v=object_getIvar(vc, ivars[i]);
+                NSString *vs=nil;
+                if([v isKindOfClass:[NSString class]]) vs=v;
+                else if([v isKindOfClass:[NSURL class]]) vs=[(NSURL*)v absoluteString];
+                if(vs.length){
+                    if(vs.length>300) vs=[vs substringToIndex:300];
+                    [e appendFormat:@"  %s = %@\n", nm, vs];
+                    shown++;
+                }
+            }
+            if(ivars) free(ivars);
+        }
+        [gMTFPageLog addObject:e];
+        while(gMTFPageLog.count>40) [gMTFPageLog removeObjectAtIndex:0];
+    } @catch(__unused id ex){}
+}
+static NSString *MTFDebugPageLogText(void){
+    if(!gMTFPageLog.count) return @"暂无记录。先去打开一篇秋先生的猫的文章，再扫一次赞赏码，然后回到这里查看。";
+    return [@"页面记录（最近 40 条，时间正序；文章页那条里找 __biz=，赞赏页那条里找参数）：\n\n" stringByAppendingString:[gMTFPageLog componentsJoinedByString:@"\n"]];
+}
+
+%hook UIViewController
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    MTFDebugRecordPage(self);
+}
+%end
+
 #pragma mark - 成员名单（B1：点成员跳原生个人朋友圈页）
 
 static NSString *MTFDisplayNameOfContact(id c){
@@ -1243,7 +1290,7 @@ static UIImage *MTFDotsImage(void){
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s {
     if(s==0) return 2;
     if(s==1) return 2;
-    if(s==3) return 1;
+    if(s==3) return 2; // debug：排查区 2 行（诊断 + 页面记录）
     return 1 + (NSInteger)self.tags.count; // 首行=未设置标签
 }
 - (CGFloat)tableView:(UITableView *)t heightForRowAtIndexPath:(NSIndexPath *)ip {
@@ -1396,7 +1443,7 @@ static UIImage *MTFDotsImage(void){
         UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
         c.textLabel.font=[UIFont systemFontOfSize:17];
         c.textLabel.textColor=self.view.tintColor?:[UIColor systemBlueColor];
-        c.textLabel.text=@"生成诊断信息";
+        c.textLabel.text=ip.row==0 ? @"生成诊断信息" : @"页面记录（debug）";
         return c;
     }
     // 微信通讯录标签页样式：左侧圆圈勾选 + 两行（名 (人数) / 前 8 个成员名）+ 右侧 … 进成员页。
@@ -1440,7 +1487,14 @@ static UIImage *MTFDotsImage(void){
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [t deselectRowAtIndexPath:ip animated:YES];
     MTFManager *m=[MTFManager shared];
-    if(ip.section==3){ [self showDiagnostics]; return; }
+    if(ip.section==3){
+        if(ip.row==0){ [self showDiagnostics]; return; }
+        MTFDiagnosticsViewController *vc=[MTFDiagnosticsViewController new];
+        vc.text=MTFDebugPageLogText();
+        UINavigationController *nav=[[UINavigationController alloc] initWithRootViewController:vc];
+        [self presentViewController:nav animated:YES completion:nil];
+        return;
+    }
     if(ip.section==0) return;
     if(ip.section==1){
         if(ip.row==0) [m selectAll]; else [m clearAll];
