@@ -740,7 +740,8 @@ static void MTFStyleCardCell(UITableView *t, UITableViewCell *c, NSIndexPath *ip
     NSAttributedString *attr=nil;
     if(@available(iOS 15.0,*)){
         NSError *err=nil;
-        attr=[[NSAttributedString alloc] initWithMarkdown:kMTFChangelog options:nil baseURL:nil error:&err];
+        // 注意：ObjC 的这个 API 第一个参数是 NSData（Swift 侧是 String，会自动转）
+        attr=[[NSAttributedString alloc] initWithMarkdown:[kMTFChangelog dataUsingEncoding:NSUTF8StringEncoding] options:nil baseURL:nil error:&err];
         if(err) attr=nil;
     }
     if(attr) tv.attributedText=attr;
